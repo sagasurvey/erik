@@ -14,6 +14,7 @@ NSAFILENAME = 'nsa_v{0}.fits'.format(NSA_VERSION.replace('.', '_'))
 SDSS_SQL_URL = 'http://skyserver.sdss3.org/dr9/en/tools/search/x_sql.asp'
 
 
+
 def download_with_progress_updates(u, fw, nreports=100, msg=None, outstream=sys.stdout):
     """
     Download a file and give progress updates on the download.
@@ -238,7 +239,6 @@ def download_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
 
             if 'No objects have been found' == firstline:
                 raise ValueError('No objects were returned from the request!')
-
             if inclheader:
                 dtstr = str(datetime.datetime.today())
                 fw.write('#Retrieved on {0} from {1}\n'.format(dtstr, sdssurl))
@@ -263,7 +263,64 @@ def download_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
         fw.close()
 
 
-def
+def nsa_environs_query(nsaid, queryradius, usecas=True):
+    """
+    Parameters
+    ----------
+    nsaid : int
+        NSA id # of the host
+    queryradius : float
+        size of query radius, in kpc if positive or -arcmin, if negative
+    usecas : bool
+        If True, will just return the query to be given to CasJobs.  Otherwise,
+        will return the actual result of the query (from `download_query`).
+
+    Returns
+    -------
+    queryorres : str
+        The SQL query if `usecas` is True or the result of the query, otherwise.
+
+    Raises
+    ------
+    ValueError
+        if the requested id is not in the catalog.
+
+    Notes
+    -----
+    This assumes the NSA catalog is sorted by NSAID.  This is True as of
+    this writing but could in theory change.  In that case the catalog should
+    be pre-sorted or something.
+    """
+    nsa = get_nsa()
+
+    # find the object that's in the right order for the requested ID
+    obj = nsa[np.searchsorted(nsa['NSAID'], nsaid)]
+
+    # make sure its actually the right object
+    if obj['NSAID'] != nsaid:
+        raise ValueError('NSAID #{0} not present in the catalog'.format(nsaid))
+
+    if queryradius <= 0:
+        raddeg = queryradius / -60.
+    else:
+        from astropy.cosmology import WMAP7
+
+        dkpc = 1000 * obj['ZDIST'] * 2.99792458e5 / WMAP7.H(0)
+        raddeg = np.degrees(queryradius / dkpc)
+
+    query = construct_query(obj['RA'], obj['DEC'], raddeg,
+        into='NSA{0}_environs'.format(nsaid) if usecas else None)
+
+    if usecas:
+        return query
+    else:
+        fnout = 'nsa{0}.dat'.format(nsaid)
+        msg = 'Downloading NSA ID{0} to {1}'.format(nsaid, fnout)
+        print 'Query radius:', raddeg, 'deg'
+        download_query(query, fn=fnout, dlmsg=msg,
+                       inclheader='Environs of NSA Object {0}'.format(nsaid))
+
+
 
 
 
