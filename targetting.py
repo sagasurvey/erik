@@ -338,6 +338,8 @@ class NSAHost(object):
         'ZDIST' field from NSA
     zdisterr : float
         'ZDIST_ERR' field from NSA
+    zspec : float
+        'Z' field from NSA (`z` is the photometric band)
     F,N,u,g,r,i,z : float
         magnitudes from the NSA
 
@@ -367,6 +369,7 @@ class NSAHost(object):
         self.dec = obj['DEC']
         self.zdist = obj['ZDIST']
         self.zdisterr = obj['ZDIST_ERR']
+        self.zspec = obj['Z']
 
         for i, band in enumerate('FNugriz'):
             setattr(self, band, obj['ABSMAG'][i])
@@ -684,5 +687,63 @@ def sampled_imagelist(ras, decs, n=25, url=SDSS_IMAGE_LIST_URL):
                    "you want with it at", url)
     return text
 
+def select_targets(host, band='r', faintlimit=21, brightlimit=15,
+    galvsallcutoff=19, inclspecqsos=True, removespecstars=True,
+    removegalsathighz=True):
 
-#target
+    cat = host.get_sdss_catalog()
+
+    mag = cat[band]
+
+    #raw magnitude cuts
+    magcuts = (brightlimit < mag) & (mag < faintlimit)
+
+    #type==3 is an imaging-classified galaxy - but only do it if you're brighter than galvsallcutoff
+    nonphotgal =  (cat['type'] == 3) | (mag > galvsallcutoff)
+
+    #TODO: APPLY FLAGS!
+    flagcuts = np.ones_like(nonphotgal)
+
+    #base selection is based on the above
+    msk = magcuts & nonphotgal & flagcuts
+
+    #below are "overrides" rather than selection categories:
+    if inclspecqsos:
+        #always include SDSS spectroscopy QSOs
+        specqsos = cat['spec_class'] == 'QSO'
+        msk[specqsos] = True
+
+    if removespecstars:
+        specstars = cat['spec_class'] == 'STAR'
+        msk[specstars] = False
+
+    if removegalsathighz:
+        gals = cat['spec_class'] == 'GALAXY'
+        #"high" z means more than 3sigma above the host's redshift
+        highzgals = gals & ((cat['spec_z']) > (host.zspec + 3 * host.zdisterr))
+        msk[highzgals] = False
+
+    res = cat[msk]
+
+    return res['ra'], res['dec'], res
+
+
+def select_fops(host, faintlimit=14, brightlimit=10):
+    cat = host.get_usnob_catalog()
+
+    mag = cat['R2']
+
+    magcuts = (brightlimit < mag) & (mag < faintlimit)
+
+    # only take thinks with *both* R mags
+    bothRs = (cat['R1'] != 0) & (cat['R2'] != 0)
+
+    res = cat[bothRs & magcuts]
+
+    return res['RA'], res['DEC'], res
+
+
+
+def select_sky_positions(host):
+    raise NotImplementedError
+
