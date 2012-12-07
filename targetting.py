@@ -8,12 +8,16 @@ import sys
 
 import numpy as np
 
+
 NSA_VERSION = '0.1.2'  # used to find the download location/file name
 NSAFILENAME = 'nsa_v{0}.fits'.format(NSA_VERSION.replace('.', '_'))
 
 SDSS_SQL_URL = 'http://skyserver.sdss3.org/dr9/en/tools/search/x_sql.asp'
+SDSS_FINDCHART_URL = 'http://skyservice.pha.jhu.edu/DR9/ImgCutout/getjpeg.aspx'
+SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss3.org/dr9/en/tools/chart/list.asp'
+USNOB_URL = 'http://www.nofs.navy.mil/cgi-bin/vo_cone.cgi'
 
-
+#SDSS 'type': 3=galaxy, 6=star
 
 def download_with_progress_updates(u, fw, nreports=100, msg=None, outstream=sys.stdout):
     """
@@ -115,7 +119,7 @@ def get_nsa(fn=None):
     return fits.getdata(fn, 1)
 
 
-def construct_query(ra, dec, radius=1, into=None):
+def construct_sdss_query(ra, dec, radius=1, into=None):
     """
     Generates the query to send to the SDSS to get the full SDSS catalog around
     a target.
@@ -144,17 +148,18 @@ def construct_query(ra, dec, radius=1, into=None):
 
     query_template = dedent("""
     SELECT  p.objId  as objID,
-       p.ra, p.dec, p.type, p.flags,
-       p.modelMag_u as u, p.modelMag_g as g, p.modelMag_r as r,p.modelMag_i as i,p.modelMag_z as z,
-       p.modelMagErr_u as u_err, p.modelMagErr_g as g_err, p.modelMagErr_r as r_err,p.modelMagErr_i as i_err,p.modelMagErr_z as z_err,
-       p.psfMag_u as psf_u, p.psfMag_g as psf_g, p.psfMag_r as psf_r,p.psfMag_i as psf_i,p.psfMag_z as psf_z,
-       extinction_u as Au, extinction_g as Ag, extinction_r as Ar, extinction_i as Ai, extinction_z as Az
+    p.ra, p.dec, p.type, p.flags, p.specObjID, p. fracDeV_r,
+    p.modelMag_u as u, p.modelMag_g as g, p.modelMag_r as r,p.modelMag_i as i,p.modelMag_z as z,
+    p.modelMagErr_u as u_err, p.modelMagErr_g as g_err, p.modelMagErr_r as r_err,p.modelMagErr_i as i_err,p.modelMagErr_z as z_err,
+    p.psfMag_u as psf_u, p.psfMag_g as psf_g, p.psfMag_r as psf_r, p.psfMag_i as psf_i, p.psfMag_z as psf_z,
+    p.extinction_u as Au, p.extinction_g as Ag, p.extinction_r as Ar, p.extinction_i as Ai, p.extinction_z as Az,
+    ISNULL(s.z, -1) as spec_z, ISNULL(s.zErr, -1) as spec_z_err, ISNULL(s.zWarning, -1) as spec_z_warn, s.class as spec_class, s.subclass as spec_subclass
 
     {into}
     FROM {funcprefix}fGetNearbyObjEq({ra}, {dec}, {radarcmin}) n, PhotoPrimary p
-    WHERE n.objID=p.objID
+    LEFT JOIN SpecObj s ON p.specObjID = s.specObjID
+    WHERE n.objID = p.objID
     """)
-
     #if using casjobs, functions need 'dbo' in front of them for some reason
     if into is None:
         intostr = ''
@@ -169,7 +174,43 @@ def construct_query(ra, dec, radius=1, into=None):
         radarcmin=radius * 60., into=intostr, funcprefix=funcprefix)
 
 
-def download_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
+def construct_usnob_query(ra, dec, radius=1, verbosity=1, votable=False, baseurl=USNOB_URL):
+    """
+    Generate a USNO-B query for the area around a target.
+
+    Parameters
+    ----------
+    ra : float
+        The center/host RA in degrees
+    dec : float
+        The center/host Dec in degrees
+    radius : float
+        The radius to search out to in degrees
+    verbosity : int
+        The USNO verbosity level
+    votable : bool
+        If True, query gets a VOTable, otherwise ASCII
+
+    Returns
+    -------
+    url : str
+        The url to query to get the catalog.
+    """
+    from urllib import urlencode
+
+    parameters = urlencode([('CAT', 'USNO-B1'),
+                            ('RA', ra),
+                            ('DEC', dec),
+                            ('SR', radius),
+                            ('VERB', verbosity),
+                            ('cftype', 'XML/VO' if votable else 'ASCII'),
+                            ('slf', 'ddd.ddd/dd.ddd'),
+                            ('skey', 'Mag')])
+
+    return baseurl + '?' + parameters
+
+
+def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
                    dlmsg='Downloading...', inclheader=True):
     """
     Runs the provided query on the given SDSS `url`, and either returns the
@@ -239,6 +280,7 @@ def download_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
 
             if 'No objects have been found' == firstline:
                 raise ValueError('No objects were returned from the request!')
+
             if inclheader:
                 dtstr = str(datetime.datetime.today())
                 fw.write('#Retrieved on {0} from {1}\n'.format(dtstr, sdssurl))
@@ -263,64 +305,384 @@ def download_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
         fw.close()
 
 
-def nsa_environs_query(nsaid, queryradius, usecas=True):
+
+class NSAHost(object):
     """
+    A host for targetting extracted from the Nasa-Sloan Atlas.
+
     Parameters
     ----------
     nsaid : int
-        NSA id # of the host
-    queryradius : float
-        size of query radius, in kpc if positive or -arcmin, if negative
-    usecas : bool
-        If True, will just return the query to be given to CasJobs.  Otherwise,
-        will return the actual result of the query (from `download_query`).
+        The NSA ID# of this host
+    environsradius : float
+        The distance to consider as the edge of the "environs" - if positive,
+        this will be taken as arcmin, otherwise -kpc
+    fnsdss : str or None
+        The filename for the SDSS data table.  If None, the default will
+        be used.
+    fnusnob : str or None
+        The filename for the USNO-B data table.  If None, the default
+        will be used.
 
-    Returns
-    -------
-    queryorres : str
-        The SQL query if `usecas` is True or the result of the query, otherwise.
-
-    Raises
-    ------
-    ValueError
-        if the requested id is not in the catalog.
+    Attributes
+    ----------
+    nsaid : int
+        The NSA ID# of this host
+    nsaindx : int
+        The index into the NSA array for this host - *not* the same as `nsaid`
+    ra : float
+        RA in degrees of the host
+    dec : float
+        Declination in degrees of the host
+    zdist : float
+        'ZDIST' field from NSA
+    zdisterr : float
+        'ZDIST_ERR' field from NSA
+    F,N,u,g,r,i,z : float
+        magnitudes from the NSA
 
     Notes
     -----
     This assumes the NSA catalog is sorted by NSAID.  This is True as of
     this writing but could in theory change.  In that case the catalog should
-    be pre-sorted or something.
+    be pre-sorted or something
     """
-    nsa = get_nsa()
+    def __init__(self, nsaid, environsradius=-35, fnsdss=None, fnusnob=None):
+        from os import path
 
-    # find the object that's in the right order for the requested ID
-    obj = nsa[np.searchsorted(nsa['NSAID'], nsaid)]
+        self.nsaid = nsaid  # The NSA ID #
 
-    # make sure its actually the right object
-    if obj['NSAID'] != nsaid:
-        raise ValueError('NSAID #{0} not present in the catalog'.format(nsaid))
+        nsa = get_nsa()
 
-    if queryradius <= 0:
-        raddeg = queryradius / -60.
-    else:
+        # find the object that's in the right order for the requested ID
+        self.nsaindx = np.searchsorted(nsa['NSAID'], nsaid)
+        obj = nsa[self.nsaindx]
+
+        # make sure its actually the right object
+        if obj['NSAID'] != nsaid:
+            raise ValueError('NSAID #{0} not present in the catalog'.format(nsaid))
+
+        #now populate various things
+        self.ra = obj['RA']
+        self.dec = obj['DEC']
+        self.zdist = obj['ZDIST']
+        self.zdisterr = obj['ZDIST_ERR']
+
+        for i, band in enumerate('FNugriz'):
+            setattr(self, band, obj['ABSMAG'][i])
+
+        if environsradius > 0:
+            self.environskpc = environsradius
+        else:
+            self.environsarcmin = -environsradius
+
+        if fnsdss is None:
+            self.fnsdss = path.join('target_catalogs',
+                'NSA{0}_sdss.dat'.format(self.nsaid))
+        else:
+            self.fnsdss = fnsdss
+
+        if fnusnob is None:
+            self.fnusnob = path.join('target_catalogs',
+                'NSA{0}_usnob.dat'.format(self.nsaid))
+        else:
+            self.fnusnob = fnusnob
+
+    @property
+    def distmpc(self):
+        """
+        Distance in Mpc (given WMAP7 cosmology/H0)
+        """
         from astropy.cosmology import WMAP7
 
-        dkpc = 1000 * obj['ZDIST'] * 2.99792458e5 / WMAP7.H(0)
-        raddeg = np.degrees(queryradius / dkpc)
+        return WMAP7.luminosity_distance(self.zdist)
 
-    query = construct_query(obj['RA'], obj['DEC'], raddeg,
-        into='NSA{0}_environs'.format(nsaid) if usecas else None)
+    @property
+    def disterrmpc(self):
+        """
+        Distance error in Mpc (given WMAP7 cosmology/H0)
+        """
+        from astropy.cosmology import WMAP7
 
-    if usecas:
-        return query
-    else:
-        fnout = 'nsa{0}.dat'.format(nsaid)
-        msg = 'Downloading NSA ID{0} to {1}'.format(nsaid, fnout)
-        print 'Query radius:', raddeg, 'deg'
-        download_query(query, fn=fnout, dlmsg=msg,
-                       inclheader='Environs of NSA Object {0}'.format(nsaid))
+        dist = WMAP7.luminosity_distance(self.zdist)
+        dp = abs(dist - WMAP7.luminosity_distance(self.zdist + self.zdisterr))
+        dm = abs(dist - WMAP7.luminosity_distance(self.zdist - self.zdisterr))
+
+        return (dp + dm) / 2
+
+    @property
+    def environskpc(self):
+        """
+        The environs radius in kpc
+        """
+        from math import radians
+        return radians(self._environsarcmin / 60.) * self.distmpc * 1000
+    @environskpc.setter
+    def environskpc(self, val):
+        from math import degrees
+        self._environsarcmin = degrees(val / (1000 * self.distmpc)) * 60.
+
+    @property
+    def environsarcmin(self):
+        """
+        The environs radius in arcminutes
+        """
+        return self._environsarcmin
+    @environsarcmin.setter
+    def environsarcmin(self, val):
+        self._environsarcmin = val
+
+    def sdss_environs_query(self, dl=False):
+        """
+        Constructs an SDSS query to get the SDSS objects around this
+        host and possibly downloads the catalog.
+
+        .. note ::
+            If you do `usecas`=True with this, be sure to put the result
+            in whatever file `fnsdss` points to.
+
+        Parameters
+        ----------
+        usecas : bool
+            If True, download the catalog to `fnsdss`.  Otherwise, just
+            return the query.
+
+        Returns
+        -------
+        query : str
+            The SQL query if `dl` is False.  Otherwise, `None` is
+            returned.
+
+        Raises
+        ------
+        ValueError
+            if the requested id is not in the catalog.
+        """
+        raddeg = self.environsarcmin / 60.
+
+        query = construct_sdss_query(self.ra, self.dec, raddeg,
+            into=None if dl else ('NSA{0}_environs'.format(self.nsaid)))
+
+        if dl:
+            msg = 'Downloading NSA ID{0} to {1}'.format(self.nsaid, self.fnsdss)
+            download_sdss_query(query, fn=self.fnsdss, dlmsg=msg,
+                inclheader='Environs of NSA Object {0}'.format(self.nsaid))
+        else:
+            return query
+
+    def usnob_environs_query(self, dl=True):
+        """
+        Constructs a query to get USNO-B objects around this host, and
+        possibly downloads the catalog.
+
+        .. note::
+            If `dl` is True, this also fiddles with the catalog a bit to
+            make the header easier to read by `astropy.io.ascii`.
+
+        Parameters
+        ----------
+        dl : bool
+            If True, download the catalog
+
+        """
+        import urllib2
+
+        raddeg = self.environsarcmin / 60.
+
+        usnourl = construct_usnob_query(self.ra, self.dec, raddeg)
+
+        if dl:
+            u = urllib2.urlopen(usnourl)
+            try:
+                with open(self.fnusnob, 'w') as fw:
+                    download_with_progress_updates(u, fw,
+                        msg='Downloading USNO-B to ' + self.fnusnob)
+            finally:
+                u.close()
+        else:
+            return usnourl
+
+    def get_usnob_catalog(self):
+        """
+        Loads and retrieves the data for the USNO-B catalog associated with this
+        host.
+
+        Returns
+        -------
+        cat : astropy.table.Table
+            The USNO-B catalog
+        """
+        if getattr(self, '_cached_usnob', None) is None:
+            from astropy.io import ascii
+
+            with open(self.fnusnob) as f:
+                for l in f:
+                    if l.startswith('#1') and 'id' in l:
+                        colnames = [nm.strip() for nm in l.replace('#1', '').split('|') if nm.strip() != '']
+                        break
+                else:
+                    raise ValueError('USNO-B catalog does not have header - wrong format?')
+
+            self._cached_usnob = ascii.read(self.fnusnob, names=colnames, guess=False)
+
+        return self._cached_usnob
+
+    def get_sdss_catalog(self):
+        """
+        Loads and retrieves the data for the SDSS environs catalog associated
+        with this host.
+
+        Returns
+        -------
+        cat : astropy.table.Table
+            The SDSS catalog
+        """
+        if getattr(self, '_cached_sdss', None) is None:
+            from astropy.io import ascii
+
+            self._cached_sdss = ascii.read(self.fnsdss, delimiter=',')
+
+        return self._cached_sdss
 
 
 
+def mark_findingchart(ras, decs, fnout, arcsecperpix=0.396127, borderpix=15,
+                      grid=True, baseurl=SDSS_FINDCHART_URL):
+    """
+    Downloads an SDSS finding chart marked with the requested locations. The
+    edges of the image are determined from the outermost objects to be marked.                                                                                                                                                                                                                                               b
+
+    Parameters
+    ----------
+    ras : array-like
+        RA of objects to be marked in degrees
+    decs : array-like
+        Dec of objects to be marked in degrees
+    fnout : str
+        File name to save the image as.  will get '.jpg' added if not given.
+    arcsecperpix : float
+        Number of arcseconds per pixel for the output image
+    borderpix : int
+        Number of additional buffer pixels around the edge of the image.
+    grid : bool
+        If True, the image will have the scale grid/bar.
+    baseurl : str
+        The URL for the finding chart web site.
+
+    Returns
+    -------
+    fn : str
+        The saved output file name.
+
+    """
+    import urllib2
+    from urllib import urlencode
+
+    if len(ras) != len(decs):
+        raise ValueError('ras and decs not the same size!')
+
+    ras = np.array(ras, copy=False)
+    decs = np.array(decs, copy=False)
+
+    rmx = np.max(ras)
+    rmn = np.min(ras)
+    dmx = np.max(decs)
+    dmn = np.min(decs)
+
+    racen = (rmx + rmn) / 2.
+    deccen = (dmx + dmn) / 2.
+
+    rarngasec = (rmx - rmn) * 3600
+    decrngasec = (dmx - dmn) * 3600
+    w = int(np.ceil(arcsecperpix * rarngasec)) + int(2 * borderpix)
+    h = int(np.ceil(arcsecperpix * decrngasec)) + int(2 * borderpix)
+
+    qr = ['RA DEC']
+    for radeci in zip(ras, decs):
+        qr.append('{0} {1}'.format(*radeci))
+    qstr = '\n'.join(qr)
+    print qstr
+
+    parameters = urlencode([('ra', racen), ('dec', deccen),
+                            ('scale', arcsecperpix),
+                            ('width', w), ('height', h),
+                            ('opt', 'G' if grid else ''),
+                            ('query', qstr)])
+    url = baseurl + '?' + parameters
+
+    fn = fnout if fnout.endswith('.jpg') else (fnout + '.jpg')
+
+    print 'Getting', w, 'by', h, 'image'
+    u = urllib2.urlopen(url)
+    try:
+        with open(fn, 'w') as fw:
+            download_with_progress_updates(u, fw, msg='Downloading to ' + fn)
+    finally:
+        u.close()
+
+    return fn
 
 
+def sampled_imagelist(ras, decs, n=25, url=SDSS_IMAGE_LIST_URL):
+    """
+    Returns the text to be pasted into the sdss image list page.  Also opens
+    the page (if `url` is not None) and copies the text to the clipboard if on
+    a mac or linux.
+
+    Parameters
+    ----------
+    ras : array-like
+        RA of objects to be marked in degrees
+    decs : array-like
+        Dec of objects to be marked in degrees
+    n : int
+        Maximum number of objects (randomly sampled if this is greater than
+        `ras` or `decs` length)
+    url : str
+        The URL to the SDSS image list page or None to not open in a web
+        browser.
+
+    Returns
+    -------
+    text : str
+        The table to be pasted into the image list text box
+
+    """
+    import webbrowser
+    import platform
+    import os
+
+    if len(ras) != len(decs):
+        raise ValueError('ras and decs not the same size!')
+
+    ras = np.array(ras, copy=False)
+    decs = np.array(decs, copy=False)
+
+    if len(ras) > n:
+        idx = np.random.permutation(len(ras))[:n]
+        ras = ras[idx]
+        decs = decs[idx]
+
+    text = ['name ra dec']
+    for i, (rai, deci) in enumerate(zip(ras, decs)):
+        text.append('{0} {1} {2}'.format(i, rai, deci))
+    text = '\n'.join(text)
+
+    if url:
+        if platform.system() == 'Darwin':
+            clipproc = os.popen('pbcopy', 'w')
+            clipproc.write(text)
+            clipproc.close()
+            webbrowser.open(url)
+        elif platform.system() == 'Linux':
+            clipproc = os.popen('xsel -i', 'w')
+            clipproc.write(text)
+            clipproc.close()
+        else:
+            print ("Not on a mac or linux, so can't use clipboard. "
+                   " Instead, returning the query and you can do what "
+                   "you want with it at", url)
+    return text
+
+
+#target
