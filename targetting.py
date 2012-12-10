@@ -688,9 +688,37 @@ def sampled_imagelist(ras, decs, n=25, url=SDSS_IMAGE_LIST_URL):
     return text
 
 def select_targets(host, band='r', faintlimit=21, brightlimit=15,
-    galvsallcutoff=19, inclspecqsos=True, removespecstars=True,
-    removegalsathighz=True):
+    galvsallcutoff=19, inclspecqsos=False, removespecstars=True,
+    removegalsathighz=True, photflags=True, rcut=None):
+    """
+    Selects targets from the SDSS catalog.
 
+    Parameters
+    ----------
+    host : NSAHost
+        The host object to select targets for
+    band : str
+        The name of the photometric band to use for magnitude cuts
+    faintlimit : number
+        The faint cutoff in `band` magnitudes
+    brightlimit : number
+        The bright cutoff in `band` magnitudes
+    galvsallcutoff : number
+        The cutoff below which both stars and galaxies are used
+    inclspecqsos : bool
+        Whether or not to include SDSS spectroscopic targets classified as QSOs
+    removespecstars : bool
+        Whether or not to ignore SDSS spectroscopic targets classified as stars
+    removegalsathighz : bool
+        Whether or not to ignore SDSS spectroscopic targets classified as
+        galaxies but with redshfits > 3*zerr +z_host
+    photflags : bool
+        Apply the extended object recommended photometry flags (see
+        http://www.sdss3.org/dr9/tutorials/flags.php)
+    rcut : number or None
+        A separation angle in kpc beyond which to not select targets
+        (or negative for arcmin), or None to use the whole catalog
+    """
     cat = host.get_sdss_catalog()
 
     mag = cat[band]
@@ -699,7 +727,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     magcuts = (brightlimit < mag) & (mag < faintlimit)
 
     #type==3 is an imaging-classified galaxy - but only do it if you're brighter than galvsallcutoff
-    nonphotgal =  (cat['type'] == 3) | (mag > galvsallcutoff)
+    nonphotgal = (cat['type'] == 3) | (mag > galvsallcutoff)
 
     #TODO: APPLY FLAGS!
     flagcuts = np.ones_like(nonphotgal)
@@ -707,11 +735,31 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     #base selection is based on the above
     msk = magcuts & nonphotgal & flagcuts
 
+    if rcut is not None:
+        dra = cat['ra'] - host.ra
+        ddec = cat['dec'] - host.dec
+        rhost = (dra ** 2 + ddec ** 2) ** 0.5
+
+        if rcut < 0:  # arcmin
+            rcutdeg = -rcut / 60.
+        else:  # kpc
+            rcutdeg = np.degrees(rcut / (1000 * host.distmpc))
+
+        msk = msk & (rhost < rcutdeg)
+
+    if photflags:
+        flags = cat['flags']
+        binned1 = (flags & 0x10000000) != 0  # BINNED1 detection
+        photqual = (flags & 0x8100000c00a0) == 0  # not NOPROFILE, PEAKCENTER,
+            # NOTCHECKED, PSF_FLUX_INTERP, SATURATED, or BAD_COUNTS_ERROR
+        deblendnopeak = ((flags & 0x400000000000) == 0)  # | (psfmagerr_g <= 0.2)
+        msk = msk & binned1 & photqual  # & deblendnopeak
+
     #below are "overrides" rather than selection categories:
-    if inclspecqsos:
-        #always include SDSS spectroscopy QSOs
-        specqsos = cat['spec_class'] == 'QSO'
-        msk[specqsos] = True
+
+    #include SDSS spectroscopy QSOs
+    specqsos = cat['spec_class'] == 'QSO'
+    msk[specqsos] = inclspecqsos
 
     if removespecstars:
         specstars = cat['spec_class'] == 'STAR'
