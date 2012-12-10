@@ -641,7 +641,7 @@ def sampled_imagelist(ras, decs, n=25, url=SDSS_IMAGE_LIST_URL):
     n : int
         Maximum number of objects (randomly sampled if this is greater than
         `ras` or `decs` length)
-    url : str
+    url : str or None
         The URL to the SDSS image list page or None to not open in a web
         browser.
 
@@ -689,7 +689,7 @@ def sampled_imagelist(ras, decs, n=25, url=SDSS_IMAGE_LIST_URL):
 
 def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     galvsallcutoff=19, inclspecqsos=False, removespecstars=True,
-    removegalsathighz=True, photflags=True, rcut=None):
+    removegalsathighz=True, photflags=True, rcut=300):
     """
     Selects targets from the SDSS catalog.
 
@@ -718,6 +718,12 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     rcut : number or None
         A separation angle in kpc beyond which to not select targets
         (or negative for arcmin), or None to use the whole catalog
+
+    Returns
+        ra : array
+        dec : array
+        cat : table
+            The SDSS catalog with the selection applied
     """
     cat = host.get_sdss_catalog()
 
@@ -745,14 +751,16 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         else:  # kpc
             rcutdeg = np.degrees(rcut / (1000 * host.distmpc))
 
-        msk = msk & (rhost < rcutdeg)
+        rcut = rhost < rcutdeg
+
+        msk = msk & rcut
 
     if photflags:
         flags = cat['flags']
         binned1 = (flags & 0x10000000) != 0  # BINNED1 detection
         photqual = (flags & 0x8100000c00a0) == 0  # not NOPROFILE, PEAKCENTER,
             # NOTCHECKED, PSF_FLUX_INTERP, SATURATED, or BAD_COUNTS_ERROR
-        deblendnopeak = ((flags & 0x400000000000) == 0)  # | (psfmagerr_g <= 0.2)
+        deblendnopeak = ((flags & 0x400000000000) == 0)  # | (psfmagerr_g <= 0.2)  # DEBLEND_NOPEAK
         msk = msk & binned1 & photqual  # & deblendnopeak
 
     #below are "overrides" rather than selection categories:
@@ -770,6 +778,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         #"high" z means more than 3sigma above the host's redshift
         highzgals = gals & ((cat['spec_z']) > (host.zspec + 3 * host.zdisterr))
         msk[highzgals] = False
+
 
     res = cat[msk]
 
