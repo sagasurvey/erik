@@ -416,6 +416,15 @@ class NSAHost(object):
         return (dp + dm) / 2
 
     @property
+    def distmod(self):
+        """
+        Distance modulus (mags)
+        """
+        from math import log10
+
+        return 5 * log10(self.distmpc * 100000)
+
+    @property
     def environskpc(self):
         """
         The environs radius in kpc
@@ -550,7 +559,7 @@ class NSAHost(object):
         return self._cached_sdss
 
 
-def sampled_imagelist(ras, decs, n=25, url=SDSS_IMAGE_LIST_URL):
+def sampled_imagelist(ras, decs, n=25, url=SDSS_IMAGE_LIST_URL, copytoclipboard=True):
     """
     Returns the text to be pasted into the sdss image list page.  Also opens
     the page (if `url` is not None) and copies the text to the clipboard if on
@@ -568,6 +577,9 @@ def sampled_imagelist(ras, decs, n=25, url=SDSS_IMAGE_LIST_URL):
     url : str or None
         The URL to the SDSS image list page or None to not open in a web
         browser.
+    copytoclipboard : bool
+        If True, copies the list of images to the clipboard for use on the SDSS
+        web site
 
     Returns
     -------
@@ -595,25 +607,27 @@ def sampled_imagelist(ras, decs, n=25, url=SDSS_IMAGE_LIST_URL):
         text.append('{0} {1} {2}'.format(i, rai, deci))
     text = '\n'.join(text)
 
-    if url:
+
+    if copytoclipboard:
         if platform.system() == 'Darwin':
             clipproc = os.popen('pbcopy', 'w')
             clipproc.write(text)
             clipproc.close()
-            webbrowser.open(url)
         elif platform.system() == 'Linux':
             clipproc = os.popen('xsel -i', 'w')
             clipproc.write(text)
             clipproc.close()
         else:
-            print ("Not on a mac or linux, so can't use clipboard. "
-                   " Instead, returning the query and you can do what "
-                   "you want with it at", url)
+            print("Not on a mac or linux, so can't use clipboard. ")
+
+    if url:
+        webbrowser.open(url)
+
     return text
 
 def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     galvsallcutoff=19, inclspecqsos=False, removespecstars=True,
-    removegalsathighz=True, photflags=True, rcut=300):
+    removegalsathighz=True, photflags=True, outercutrad=300, innercutrad=20):
     """
     Selects targets from the SDSS catalog.
 
@@ -639,9 +653,12 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     photflags : bool
         Apply the extended object recommended photometry flags (see
         http://www.sdss3.org/dr9/tutorials/flags.php)
-    rcut : number or None
+    outercutrad : number or None
         A separation angle in kpc beyond which to not select targets
-        (or negative for arcmin), or None to use the whole catalog
+        (or negative for arcmin), or None to not do this cut
+    innercutrad : number or None
+        A separation angle in kpc inside which to not select targets
+        (or negative for arcmin), or None to not cut
 
     Returns
     -------
@@ -664,27 +681,39 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     #base selection is based on the above
     msk = magcuts & nonphotgal & flagcuts
 
-    if rcut is not None:
-        dra = cat['ra'] - host.ra
-        ddec = cat['dec'] - host.dec
-        rhost = (dra ** 2 + ddec ** 2) ** 0.5
+    dra = cat['ra'] - host.ra
+    ddec = cat['dec'] - host.dec
+    rhost = (dra ** 2 + ddec ** 2) ** 0.5
 
-        if rcut < 0:  # arcmin
-            rcutdeg = -rcut / 60.
+    if outercutrad is not None:
+        if outercutrad < 0:  # arcmin
+            outercutraddeg = -outercutrad / 60.
         else:  # kpc
-            rcutdeg = np.degrees(rcut / (1000 * host.distmpc))
+            outercutraddeg = np.degrees(outercutrad / (1000 * host.distmpc))
 
-        rcut = rhost < rcutdeg
+        outercutrad = rhost < outercutraddeg
 
-        msk = msk & rcut
+        msk = msk & outercutrad
+
+    if innercutrad is not None:
+        if innercutrad < 0:  # arcmin
+            innercutraddeg = -innercutrad / 60.
+        else:  # kpc
+            innercutraddeg = np.degrees(innercutrad / (1000 * host.distmpc))
+
+        innercutrad = rhost > innercutraddeg
+
+        msk = msk & innercutrad
 
     if photflags:
         flags = cat['flags']
         binned1 = (flags & 0x10000000) != 0  # BINNED1 detection
-        photqual = (flags & 0x8100000c00a0) == 0  # not NOPROFILE, PEAKCENTER,
+        nsaturated = (0x0000000000040000 & flags) == 0  # not saturated
+        nbce = (0x0000010000000000 & flags) == 0  # not BAD_COUNTS_ERROR
+        #photqual = (flags & 0x8100000c00a0) == 0  # not NOPROFILE, PEAKCENTER,
             # NOTCHECKED, PSF_FLUX_INTERP, SATURATED, or BAD_COUNTS_ERROR
-        deblendnopeak = ((flags & 0x400000000000) == 0)  # | (psfmagerr_g <= 0.2)  # DEBLEND_NOPEAK
-        msk = msk & binned1 & photqual  # & deblendnopeak
+        #deblendnopeak = ((flags & 0x400000000000) == 0)  # | (psfmagerr_g <= 0.2)  # DEBLEND_NOPEAK
+        msk = msk & binned1 & nsaturated & nbce
 
     #below are "overrides" rather than selection categories:
 
