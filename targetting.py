@@ -965,7 +965,7 @@ def construct_whydra_file(fnout, host, lst, texp=1.5, wl=7000, obsdatetime=None,
         fw.write('CURRENT EPOCH: {0:.1f}\n'.format(obsdatetime.jyear))
         fw.write('SIDEREAL TIME: {0:.2f}\n'.format(lst))
         fw.write('EXPOSURE LENGTH: {0:.2f}\n'.format(texp))
-        fw.write('WAVELENGTH: {0}\n'.format(int(wl)))
+        fw.write('WAVELENGTH: {0}.\n'.format(int(wl)))
         fw.write('CABLE: RED\n')
         fw.write('WEIGHTING: WEAK\n')
 
