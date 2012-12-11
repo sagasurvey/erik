@@ -7,6 +7,7 @@ These functions are for the "Distant local groups" project target selection.
 import sys
 
 import numpy as np
+from matplotlib import pyplot as plt
 
 
 NSA_VERSION = '0.1.2'  # used to find the download location/file name
@@ -18,6 +19,7 @@ SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss3.org/dr9/en/tools/chart/list.asp'
 USNOB_URL = 'http://www.nofs.navy.mil/cgi-bin/vo_cone.cgi'
 
 #SDSS 'type': 3=galaxy, 6=star
+
 
 def download_with_progress_updates(u, fw, nreports=100, msg=None, outstream=sys.stdout):
     """
@@ -779,13 +781,14 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         highzgals = gals & ((cat['spec_z']) > (host.zspec + 3 * host.zdisterr))
         msk[highzgals] = False
 
-
-    res = cat[msk]
-
-    return res['ra'], res['dec'], res
+    return cat[msk]
 
 
 def select_fops(host, faintlimit=14, brightlimit=10):
+    """
+    Selects FOP stars from USNO-B
+    """
+
     cat = host.get_usnob_catalog()
 
     mag = cat['R2']
@@ -795,9 +798,78 @@ def select_fops(host, faintlimit=14, brightlimit=10):
     # only take thinks with *both* R mags
     bothRs = (cat['R1'] != 0) & (cat['R2'] != 0)
 
-    res = cat[bothRs & magcuts]
+    return cat[bothRs & magcuts]
 
-    return res['RA'], res['DEC'], res
+
+def usno_vs_sdss_offset(sdsscat, usnocat, plots=False, raiseerror=0.5):
+    """
+    Determines the offset between a USNO-B1 catalog and a sdss catalog covering
+    the same fields by matching nearby stars and computing the median.
+
+    Parameters
+    ----------
+    sdsscat : astropy.table.Table
+        Table from the SDSS catalog - must have 'ra' and 'dec'
+    usnocat : astropy.table.Table
+        Table from the SDSS catalog - must have 'RA' and 'DEC'
+    plots : bool
+        True to show diagnostic plots
+    raiseerror : float or None
+        The distance to raise an error if the median separation is greater than
+        it.
+
+    Returns
+    -------
+    dra : array
+    ddec : array
+
+    Raises
+    ------
+    ValueError
+        If the separation is larger that `raiseerror`
+    """
+    from scipy.spatial import cKDTree
+
+    sra = sdsscat['ra']
+    sdec = sdsscat['dec']
+    ura = usnocat['RA']
+    udec = usnocat['DEC']
+
+    kdt = cKDTree(np.array([sra, sdec]).T)
+
+    d, si = kdt.query(np.array([ura, udec]).T)
+
+    dra = ura - sra[si]
+    ddec = udec - sdec[si]
+
+    newura = ura - np.median(dra)
+    newudec = udec - np.median(ddec)
+
+    d2, si2 = kdt.query(np.array([newura, newudec]).T)
+
+    dra2 = ura - sra[si2]
+    ddec2 = udec - sdec[si2]
+    d2off = np.hypot(dra2, ddec2)
+
+    if plots:
+        plt.figure()
+        bins = np.linspace(0, 3, 200)
+        plt.hist(d * 3600, bins=bins, histtype='step')
+        plt.hist(d2off * 3600, bins=bins, histtype='step')
+        plt.xlabel('d [arcmin]')
+        plt.figure()
+        plt.plot(dra * 3600, ddec * 3600, '.b', ms=1, alpha=.5)
+        plt.plot(dra2 * 3600, ddec2 * 3600, '.r', ms=1, alpha=.5)
+        plt.scatter([0], [0], color='k', zorder=2)
+        plt.scatter([np.median(dra) * 3600], [np.median(ddec) * 3600], color='r', alpha=.95, zorder=2)
+        plt.scatter([np.median(dra2) * 3600], [np.median(ddec2) * 3600], color='g', alpha=.95, zorder=2)
+        plt.xlim(-1, 1)
+        plt.ylim(-1, 1)
+
+    if raiseerror is not None and ((np.median(d) * 3600) > raiseerror):
+        raise ValueError('median separation from USNO to SDSS is {0} arcsec'.format(np.median(d) * 3600))
+
+    return np.median(dra), np.median(ddec)
 
 
 
