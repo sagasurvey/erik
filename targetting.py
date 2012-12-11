@@ -626,8 +626,8 @@ def sampled_imagelist(ras, decs, n=25, url=SDSS_IMAGE_LIST_URL, copytoclipboard=
     return text
 
 def select_targets(host, band='r', faintlimit=21, brightlimit=15,
-    galvsallcutoff=19, inclspecqsos=False, removespecstars=True,
-    removegalsathighz=True, photflags=True, outercutrad=300, innercutrad=20):
+    galvsallcutoff=20, inclspecqsos=False, removespecstars=True,
+    removegalsathighz=True, photflags=True, outercutrad=250, innercutrad=20):
     """
     Selects targets from the SDSS catalog.
 
@@ -665,6 +665,8 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         cat : table
             The SDSS catalog with the selection applied
     """
+    from math import cos, radians
+
     cat = host.get_sdss_catalog()
 
     mag = cat[band]
@@ -681,9 +683,11 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     #base selection is based on the above
     msk = magcuts & nonphotgal & flagcuts
 
+    cdec = cos(radians(host.dec))
+
     dra = cat['ra'] - host.ra
     ddec = cat['dec'] - host.dec
-    rhost = (dra ** 2 + ddec ** 2) ** 0.5
+    rhost = ((dra * cdec) ** 2 + ddec ** 2) ** 0.5
 
     if outercutrad is not None:
         if outercutrad < 0:  # arcmin
@@ -790,6 +794,7 @@ def usno_vs_sdss_offset(sdsscat, usnocat, plots=False, raiseerror=0.5):
         If the separation is larger that `raiseerror`
     """
     from scipy.spatial import cKDTree
+    from math import cos
 
     sra = sdsscat['ra']
     sdec = sdsscat['dec']
@@ -812,6 +817,8 @@ def usno_vs_sdss_offset(sdsscat, usnocat, plots=False, raiseerror=0.5):
     ddec2 = udec - sdec[si2]
     d2off = np.hypot(dra2, ddec2)
 
+    cdec = cos(np.radians(np.median(udec)))
+
     if plots:
         plt.figure()
         bins = np.linspace(0, 3, 200)
@@ -824,10 +831,10 @@ def usno_vs_sdss_offset(sdsscat, usnocat, plots=False, raiseerror=0.5):
         plt.scatter([0], [0], color='k', zorder=2)
         plt.scatter([np.median(dra) * 3600], [np.median(ddec) * 3600], color='r', alpha=.95, zorder=2)
         plt.scatter([np.median(dra2) * 3600], [np.median(ddec2) * 3600], color='g', alpha=.95, zorder=2)
-        plt.xlim(-1, 1)
+        plt.xlim(-1/cdec, 1/cdec)
         plt.ylim(-1, 1)
 
-    dres = np.hypot(np.median(dra2), np.median(ddec2))
+    dres = np.hypot(np.median(dra2) / cdec, np.median(ddec2))
     if raiseerror is not None and ((dres * 3600) > raiseerror):
         raise ValueError('median separation from USNO to SDSS is {0} arcsec'.format(np.median(d) * 3600))
 
@@ -885,6 +892,7 @@ def _whydra_file_line(i, name, radeg, decdeg, code):
 
 def construct_whydra_file(fnout, host, lst, texp=1.5, wl=7000, obsdatetime=None, objcat=None, fopcat=None, skyradec=None):
     import time
+    from warnings import warn
 
     from astropy.time import Time
 
@@ -893,17 +901,22 @@ def construct_whydra_file(fnout, host, lst, texp=1.5, wl=7000, obsdatetime=None,
 
     if objcat is None:
         objcat = select_targets(host)
+        print len(objcat), 'objects'
     if fopcat is None:
         fopcat = select_fops(host)
+        print len(objcat), 'FOPS'
     if skyradec is None:
         skyradec = select_sky_positions(host)
 
     if len(objcat) > 2000:
-        raise ValueError('whydra cannot handle > 2000 objects')
+        print('whydra cannot handle > 2000 objects, truncating')
+        objcat = objcat[:1999]
     if len(fopcat) > 2000:
-        raise ValueError('whydra cannot handle > 2000 FOPS')
+        print('whydra cannot handle > 2000 FOPS, truncating')
+        fopcat = fopcat[:1999]
     if len(skyradec[0]) > 2000:
-        raise ValueError('whydra cannot handle > 2000 sky points')
+        print('whydra cannot handle > 2000 sky points, truncating')
+        skyradec = skyradec[0][:1999], skyradec[1][:1999]
 
     #determine the SDSS vs. USNO offset
     dra, ddec = usno_vs_sdss_offset(host.get_sdss_catalog(), host.get_usnob_catalog())
