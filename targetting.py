@@ -825,8 +825,8 @@ def usno_vs_sdss_offset(sdsscat, usnocat, plots=False, raiseerror=0.5):
     plots : bool
         True to show diagnostic plots
     raiseerror : float or None
-        The distance to raise an error if the median separation is greater than
-        it.
+        The distance to raise an error if the resulting offset is more than the
+        given number of arcmin.
 
     Returns
     -------
@@ -876,13 +876,14 @@ def usno_vs_sdss_offset(sdsscat, usnocat, plots=False, raiseerror=0.5):
         plt.xlim(-1, 1)
         plt.ylim(-1, 1)
 
-    if raiseerror is not None and ((np.median(d) * 3600) > raiseerror):
+    dres = np.hypot(np.median(dra2), np.median(ddec2))
+    if raiseerror is not None and ((dres * 3600) > raiseerror):
         raise ValueError('median separation from USNO to SDSS is {0} arcsec'.format(np.median(d) * 3600))
 
-    return np.median(dra), np.median(ddec)
+    return np.median(dra2), np.median(ddec2)
 
 
-def select_sky_positions(host, nsky):
+def select_sky_positions(host, nsky=100):
     """
     Produces sky positions uniformly covering a circle centered at the host
 
@@ -903,3 +904,97 @@ def select_sky_positions(host, nsky):
     thetas = 2 * np.pi * np.random.rand(nsky)
 
     return (host.ra + rs * np.sin(thetas)), (host.dec + rs * np.cos(thetas))
+
+
+def _whydra_file_line(i, name, radeg, decdeg, code):
+    from warnings import warn
+    from astropy.coordinates import Angle
+    from astropy.units import degree, hour
+
+    i = int(i)
+    if i > 9999:
+        raise ValueError('i too large: ' + str(i))
+
+    if len(name) > 20:
+        warn('Name {0} too long - trimming'.format(name))
+        name = name[:20]
+
+    if code not in 'COSFE':
+        raise ValueError('invalid whydra line code ' + code)
+
+    rastr = Angle(radeg, degree).format(hour, sep=':', pad=True, precision=3)
+    decstr = Angle(decdeg, degree).format(degree, sep=':', pad=True, precision=2, alwayssign=True)
+
+    if name == 'SDSS':
+        name = 'J' + rastr[:-1].replace(':', '') + decstr[:-1].replace(':', '')
+
+    return '{i:04} {name:20} {ra} {dec} {code}'.format(i=i, name=name, ra=rastr,
+        dec=decstr, code=code)
+
+
+def construct_whydra_file(fnout, host, lst, texp=1.5, wl=7000, obsdatetime=None, objcat=None, fopcat=None, skyradec=None):
+    import time
+
+    from astropy.time import Time
+
+    if obsdatetime is None:
+        obsdatetime = Time(time.time(), format='unix', scale='utc')
+
+    if objcat is None:
+        objcat = select_targets(host)
+    if fopcat is None:
+        fopcat = select_fops(host)
+    if skyradec is None:
+        skyradec = select_sky_positions(host)
+
+    if len(objcat) > 2000:
+        raise ValueError('whydra cannot handle > 2000 objects')
+    if len(fopcat) > 2000:
+        raise ValueError('whydra cannot handle > 2000 FOPS')
+    if len(skyradec[0]) > 2000:
+        raise ValueError('whydra cannot handle > 2000 sky points')
+
+    #determine the SDSS vs. USNO offset
+    dra, ddec = usno_vs_sdss_offset(host.get_sdss_catalog(), host.get_usnob_catalog())
+    print 'USNO/SDSS offsets:', dra * 3600, ddec * 3600
+
+    with open(fnout, 'w') as fw:
+        #first do the header
+        fw.write('FIELD NAME: NSA{0}\n'.format(host.nsaid))
+        fw.write('INPUT EPOCH: 2000.00\n')
+        fw.write('CURRENT EPOCH: {0:.1f}\n'.format(obsdatetime.jyear))
+        fw.write('SIDEREAL TIME: {0:.2f}\n'.format(lst))
+        fw.write('EXPOSURE LENGTH: {0:.2f}\n'.format(texp))
+        fw.write('WAVELENGTH: {0}\n'.format(int(wl)))
+        fw.write('CABLE: RED\n')
+        fw.write('WEIGHTING: WEAK\n')
+
+        #first add host as center, and as object
+        fw.write(_whydra_file_line(0001, 'Center'.format(host.nsaid), host.ra, host.dec, 'C'))
+        fw.write('\n')
+
+        fw.write(_whydra_file_line(1000, 'NSA{0}'.format(host.nsaid), host.ra, host.dec, 'O'))
+        fw.write('\n')
+
+        i = 2000
+        for obj in objcat:
+            ln = _whydra_file_line(i, 'SDSS', obj['ra'], obj['dec'], 'O')
+            i += 1
+            fw.write(ln)
+            fw.write('\n')
+
+        i = 5000
+        for fop in fopcat:
+            ln = _whydra_file_line(i, 'USNO' + fop['id'], fop['RA'] - dra, fop['DEC'] - ddec, 'F')
+            fw.write(ln)
+            i += 1
+            fw.write('\n')
+
+        i = 8000
+        j = 1
+        for skyra, skydec in zip(*skyradec):
+            ln = _whydra_file_line(i, 'sky{0}'.format(j), skyra, skydec, 'S')
+            fw.write(ln)
+            i += 1
+            j += 1
+            fw.write('\n')
