@@ -722,8 +722,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         (or negative for arcmin), or None to use the whole catalog
 
     Returns
-        ra : array
-        dec : array
+    -------
         cat : table
             The SDSS catalog with the selection applied
     """
@@ -786,7 +785,18 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
 
 def select_fops(host, faintlimit=14, brightlimit=10):
     """
-    Selects FOP stars from USNO-B
+    Selects candidate FOP stars from USNO-B
+
+    Parameters
+    ----------
+    host : NSAHost
+    faintlimit : number
+    brightlimit : number
+
+    Returns
+    -------
+        cat : table
+            The USNO-B catalog with the selection applied
     """
 
     cat = host.get_usnob_catalog()
@@ -795,7 +805,7 @@ def select_fops(host, faintlimit=14, brightlimit=10):
 
     magcuts = (brightlimit < mag) & (mag < faintlimit)
 
-    # only take thinks with *both* R mags
+    # only take things with *both* R mags
     bothRs = (cat['R1'] != 0) & (cat['R2'] != 0)
 
     return cat[bothRs & magcuts]
@@ -872,7 +882,24 @@ def usno_vs_sdss_offset(sdsscat, usnocat, plots=False, raiseerror=0.5):
     return np.median(dra), np.median(ddec)
 
 
+def select_sky_positions(host, nsky):
+    """
+    Produces sky positions uniformly covering a circle centered at the host
 
-def select_sky_positions(host):
-    raise NotImplementedError
+    Parameters
+    ----------
+    host : NSAHost
+    nsky : int
+        Number of sky positions to generate
 
+    Returns
+    -------
+    ra : array
+    dec : array
+    """
+    raddeg = host.environsarcmin / 60.
+
+    rs = raddeg * 2 * np.arccos(np.random.rand(nsky)) / np.pi
+    thetas = 2 * np.pi * np.random.rand(nsky)
+
+    return (host.ra + rs * np.sin(thetas)), (host.dec + rs * np.cos(thetas))
