@@ -550,84 +550,6 @@ class NSAHost(object):
         return self._cached_sdss
 
 
-
-def mark_findingchart(ras, decs, fnout, arcsecperpix=0.396127, borderpix=15,
-                      grid=True, baseurl=SDSS_FINDCHART_URL):
-    """
-    Downloads an SDSS finding chart marked with the requested locations. The
-    edges of the image are determined from the outermost objects to be marked.                                                                                                                                                                                                                                               b
-
-    Parameters
-    ----------
-    ras : array-like
-        RA of objects to be marked in degrees
-    decs : array-like
-        Dec of objects to be marked in degrees
-    fnout : str
-        File name to save the image as.  will get '.jpg' added if not given.
-    arcsecperpix : float
-        Number of arcseconds per pixel for the output image
-    borderpix : int
-        Number of additional buffer pixels around the edge of the image.
-    grid : bool
-        If True, the image will have the scale grid/bar.
-    baseurl : str
-        The URL for the finding chart web site.
-
-    Returns
-    -------
-    fn : str
-        The saved output file name.
-
-    """
-    import urllib2
-    from urllib import urlencode
-
-    if len(ras) != len(decs):
-        raise ValueError('ras and decs not the same size!')
-
-    ras = np.array(ras, copy=False)
-    decs = np.array(decs, copy=False)
-
-    rmx = np.max(ras)
-    rmn = np.min(ras)
-    dmx = np.max(decs)
-    dmn = np.min(decs)
-
-    racen = (rmx + rmn) / 2.
-    deccen = (dmx + dmn) / 2.
-
-    rarngasec = (rmx - rmn) * 3600
-    decrngasec = (dmx - dmn) * 3600
-    w = int(np.ceil(arcsecperpix * rarngasec)) + int(2 * borderpix)
-    h = int(np.ceil(arcsecperpix * decrngasec)) + int(2 * borderpix)
-
-    qr = ['RA DEC']
-    for radeci in zip(ras, decs):
-        qr.append('{0} {1}'.format(*radeci))
-    qstr = '\n'.join(qr)
-    print qstr
-
-    parameters = urlencode([('ra', racen), ('dec', deccen),
-                            ('scale', arcsecperpix),
-                            ('width', w), ('height', h),
-                            ('opt', 'G' if grid else ''),
-                            ('query', qstr)])
-    url = baseurl + '?' + parameters
-
-    fn = fnout if fnout.endswith('.jpg') else (fnout + '.jpg')
-
-    print 'Getting', w, 'by', h, 'image'
-    u = urllib2.urlopen(url)
-    try:
-        with open(fn, 'w') as fw:
-            download_with_progress_updates(u, fw, msg='Downloading to ' + fn)
-    finally:
-        u.close()
-
-    return fn
-
-
 def sampled_imagelist(ras, decs, n=25, url=SDSS_IMAGE_LIST_URL):
     """
     Returns the text to be pasted into the sdss image list page.  Also opens
@@ -965,7 +887,7 @@ def construct_whydra_file(fnout, host, lst, texp=1.5, wl=7000, obsdatetime=None,
         fw.write('CURRENT EPOCH: {0:.1f}\n'.format(obsdatetime.jyear))
         fw.write('SIDEREAL TIME: {0:.2f}\n'.format(lst))
         fw.write('EXPOSURE LENGTH: {0:.2f}\n'.format(texp))
-        fw.write('WAVELENGTH: {0}.\n'.format(int(wl)))
+        fw.write('WAVELENGTH: {0:f}\n'.format(int(wl)))
         fw.write('CABLE: RED\n')
         fw.write('WEIGHTING: WEAK\n')
 
