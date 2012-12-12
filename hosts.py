@@ -90,13 +90,13 @@ class NSAHost(object):
 
         if fnsdss is None:
             self.fnsdss = path.join('catalogs',
-                'NSA{0}_sdss.dat'.format(self.nsaid))
+                '{0}_sdss.dat'.format(self.name))
         else:
             self.fnsdss = fnsdss
 
         if fnusnob is None:
             self.fnusnob = path.join('catalogs',
-                'NSA{0}_usnob.dat'.format(self.nsaid))
+                '{0}_usnob.dat'.format(self.name))
         else:
             self.fnusnob = fnusnob
 
@@ -228,7 +228,7 @@ class NSAHost(object):
 
         raddeg = self.environsarcmin / 60.
 
-        usnourl = construct_usnob_query(self.ra, self.dec, raddeg)
+        usnourl = construct_usnob_query(self.ra, self.dec, raddeg, verbosity=2)
 
         if dl:
             u = urllib2.urlopen(usnourl)
