@@ -89,13 +89,13 @@ class NSAHost(object):
             self.environsarcmin = -environsradius
 
         if fnsdss is None:
-            self.fnsdss = path.join('target_catalogs',
+            self.fnsdss = path.join('catalogs',
                 'NSA{0}_sdss.dat'.format(self.nsaid))
         else:
             self.fnsdss = fnsdss
 
         if fnusnob is None:
-            self.fnusnob = path.join('target_catalogs',
+            self.fnusnob = path.join('catalogs',
                 'NSA{0}_usnob.dat'.format(self.nsaid))
         else:
             self.fnusnob = fnusnob

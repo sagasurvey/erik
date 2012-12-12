@@ -1,3 +1,4 @@
 *.pyc
 *.fits
-target_catalogs/*
+catalogs/*
+wiyn_targets/*
