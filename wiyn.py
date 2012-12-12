@@ -4,13 +4,7 @@ from __future__ import division
 These functions are for the "Distant local groups" project WIYN-related work.
 """
 
-import sys
-
 import numpy as np
-from matplotlib import pyplot as plt
-
-
-from targeting import usno_vs_sdss_offset, select_targets
 
 
 def select_fops(host, faintlimit=14, brightlimit=12.5, randomize=True):
@@ -83,7 +77,7 @@ def select_sky_positions(host, nsky=500, sdsscat=None, usnocat=None, nearnesslim
 
     i = -1
     while len(ras) < nsky:
-        i +=1
+        i += 1
 
         rs = raddeg * 2 * np.arccos(np.random.rand(nsky)) / np.pi
         thetas = 2 * np.pi * np.random.rand(nsky)
@@ -98,7 +92,6 @@ def select_sky_positions(host, nsky=500, sdsscat=None, usnocat=None, nearnesslim
 
         ras = np.append(ras, ra[msk])
         decs = np.append(decs, dec[msk])
-        print i,len(ras)
 
         if i > 100:
             raise ValueError('Could not produce {nsky} sky positions after {i} iterations!'.format(nsky=nsky, i=i))
@@ -108,9 +101,10 @@ def select_sky_positions(host, nsky=500, sdsscat=None, usnocat=None, nearnesslim
 
 def construct_whydra_file(fnout, host, lst, texp=1.5, wl=7000, obsdatetime=None, objcat=None, fopcat=None, skyradec=None):
     import time
-    from warnings import warn
 
     from astropy.time import Time
+
+    from targeting import usno_vs_sdss_offset, select_targets
 
     if obsdatetime is None:
         obsdatetime = Time(time.time(), format='unix', scale='utc')
