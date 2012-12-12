@@ -307,7 +307,6 @@ def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
         fw.close()
 
 
-
 class NSAHost(object):
     """
     A host for targetting extracted from the Nasa-Sloan Atlas.
@@ -445,6 +444,21 @@ class NSAHost(object):
     @environsarcmin.setter
     def environsarcmin(self, val):
         self._environsarcmin = val
+
+    def physical_to_projected(self, distkpc):
+        """
+        Returns the angular distance (in degrees) given a projected physical distance (in kpc)
+        """
+        return np.degrees(distkpc / (1000 * self.distmpc)) * 60
+
+    def projected_to_physical(self, angle):
+        """
+        Returns the projected physical distance (in kpc) given an angular distance (in arcmin)
+        """
+        if hasattr(angle, 'degrees'):
+            angle = angle.degrees
+
+        return np.radians(angle) * 1000 * self.distmpc
 
     def sdss_environs_query(self, dl=False):
         """
@@ -607,7 +621,6 @@ def sampled_imagelist(ras, decs, n=25, url=SDSS_IMAGE_LIST_URL, copytoclipboard=
         text.append('{0} {1} {2}'.format(i, rai, deci))
     text = '\n'.join(text)
 
-
     if copytoclipboard:
         if platform.system() == 'Darwin':
             clipproc = os.popen('pbcopy', 'w')
@@ -625,9 +638,11 @@ def sampled_imagelist(ras, decs, n=25, url=SDSS_IMAGE_LIST_URL, copytoclipboard=
 
     return text
 
+
 def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     galvsallcutoff=20, inclspecqsos=False, removespecstars=True,
-    removegalsathighz=True, photflags=True, outercutrad=250, innercutrad=20):
+    removegalsathighz=True, photflags=True, outercutrad=250, innercutrad=20,
+    randomize=True):
     """
     Selects targets from the SDSS catalog.
 
@@ -659,6 +674,8 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     innercutrad : number or None
         A separation angle in kpc inside which to not select targets
         (or negative for arcmin), or None to not cut
+    randomize : bool
+        Randomize the order of the catalog and the very end
 
     Returns
     -------
@@ -735,35 +752,11 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         highzgals = gals & ((cat['spec_z']) > (host.zspec + 3 * host.zdisterr))
         msk[highzgals] = False
 
-    return cat[msk]
+    res = cat[msk]
+    if randomize:
+        res = res[np.random.permutation(len(res))]
 
-
-def select_fops(host, faintlimit=14, brightlimit=10):
-    """
-    Selects candidate FOP stars from USNO-B
-
-    Parameters
-    ----------
-    host : NSAHost
-    faintlimit : number
-    brightlimit : number
-
-    Returns
-    -------
-        cat : table
-            The USNO-B catalog with the selection applied
-    """
-
-    cat = host.get_usnob_catalog()
-
-    mag = cat['R2']
-
-    magcuts = (brightlimit < mag) & (mag < faintlimit)
-
-    # only take things with *both* R mags
-    bothRs = (cat['R1'] != 0) & (cat['R2'] != 0)
-
-    return cat[bothRs & magcuts]
+    return res
 
 
 def usno_vs_sdss_offset(sdsscat, usnocat, plots=False, raiseerror=0.5):
@@ -831,7 +824,7 @@ def usno_vs_sdss_offset(sdsscat, usnocat, plots=False, raiseerror=0.5):
         plt.scatter([0], [0], color='k', zorder=2)
         plt.scatter([np.median(dra) * 3600], [np.median(ddec) * 3600], color='r', alpha=.95, zorder=2)
         plt.scatter([np.median(dra2) * 3600], [np.median(ddec2) * 3600], color='g', alpha=.95, zorder=2)
-        plt.xlim(-1/cdec, 1/cdec)
+        plt.xlim(-1 / cdec, 1 / cdec)
         plt.ylim(-1, 1)
 
     dres = np.hypot(np.median(dra2) / cdec, np.median(ddec2))
@@ -839,126 +832,3 @@ def usno_vs_sdss_offset(sdsscat, usnocat, plots=False, raiseerror=0.5):
         raise ValueError('median separation from USNO to SDSS is {0} arcsec'.format(np.median(d) * 3600))
 
     return np.median(dra2), np.median(ddec2)
-
-
-def select_sky_positions(host, nsky=100):
-    """
-    Produces sky positions uniformly covering a circle centered at the host
-
-    Parameters
-    ----------
-    host : NSAHost
-    nsky : int
-        Number of sky positions to generate
-
-    Returns
-    -------
-    ra : array
-    dec : array
-    """
-    raddeg = host.environsarcmin / 60.
-
-    rs = raddeg * 2 * np.arccos(np.random.rand(nsky)) / np.pi
-    thetas = 2 * np.pi * np.random.rand(nsky)
-
-    return (host.ra + rs * np.sin(thetas)), (host.dec + rs * np.cos(thetas))
-
-
-def _whydra_file_line(i, name, radeg, decdeg, code):
-    from warnings import warn
-    from astropy.coordinates import Angle
-    from astropy.units import degree, hour
-
-    i = int(i)
-    if i > 9999:
-        raise ValueError('i too large: ' + str(i))
-
-    if len(name) > 20:
-        warn('Name {0} too long - trimming'.format(name))
-        name = name[:20]
-
-    if code not in 'COSFE':
-        raise ValueError('invalid whydra line code ' + code)
-
-    rastr = Angle(radeg, degree).format(hour, sep=':', pad=True, precision=3)
-    decstr = Angle(decdeg, degree).format(degree, sep=':', pad=True, precision=2, alwayssign=True)
-
-    if name == 'SDSS':
-        name = 'J' + rastr[:-1].replace(':', '') + decstr[:-1].replace(':', '')
-
-    return '{i:04} {name:20} {ra} {dec} {code}'.format(i=i, name=name, ra=rastr,
-        dec=decstr, code=code)
-
-
-def construct_whydra_file(fnout, host, lst, texp=1.5, wl=7000, obsdatetime=None, objcat=None, fopcat=None, skyradec=None):
-    import time
-    from warnings import warn
-
-    from astropy.time import Time
-
-    if obsdatetime is None:
-        obsdatetime = Time(time.time(), format='unix', scale='utc')
-
-    if objcat is None:
-        objcat = select_targets(host)
-        print len(objcat), 'objects'
-    if fopcat is None:
-        fopcat = select_fops(host)
-        print len(objcat), 'FOPS'
-    if skyradec is None:
-        skyradec = select_sky_positions(host)
-
-    if len(objcat) > 2000:
-        print('whydra cannot handle > 2000 objects, truncating')
-        objcat = objcat[:1999]
-    if len(fopcat) > 2000:
-        print('whydra cannot handle > 2000 FOPS, truncating')
-        fopcat = fopcat[:1999]
-    if len(skyradec[0]) > 2000:
-        print('whydra cannot handle > 2000 sky points, truncating')
-        skyradec = skyradec[0][:1999], skyradec[1][:1999]
-
-    #determine the SDSS vs. USNO offset
-    dra, ddec = usno_vs_sdss_offset(host.get_sdss_catalog(), host.get_usnob_catalog())
-    print 'USNO/SDSS offsets:', dra * 3600, ddec * 3600
-
-    with open(fnout, 'w') as fw:
-        #first do the header
-        fw.write('FIELD NAME: NSA{0}\n'.format(host.nsaid))
-        fw.write('INPUT EPOCH: 2000.00\n')
-        fw.write('CURRENT EPOCH: {0:.1f}\n'.format(obsdatetime.jyear))
-        fw.write('SIDEREAL TIME: {0:.2f}\n'.format(lst))
-        fw.write('EXPOSURE LENGTH: {0:.2f}\n'.format(texp))
-        fw.write('WAVELENGTH: {0:f}\n'.format(int(wl)))
-        fw.write('CABLE: RED\n')
-        fw.write('WEIGHTING: WEAK\n')
-
-        #first add host as center, and as object
-        fw.write(_whydra_file_line(0001, 'Center'.format(host.nsaid), host.ra, host.dec, 'C'))
-        fw.write('\n')
-
-        fw.write(_whydra_file_line(1000, 'NSA{0}'.format(host.nsaid), host.ra, host.dec, 'O'))
-        fw.write('\n')
-
-        i = 2000
-        for obj in objcat:
-            ln = _whydra_file_line(i, 'SDSS', obj['ra'], obj['dec'], 'O')
-            i += 1
-            fw.write(ln)
-            fw.write('\n')
-
-        i = 5000
-        for fop in fopcat:
-            ln = _whydra_file_line(i, 'USNO' + fop['id'], fop['RA'] - dra, fop['DEC'] - ddec, 'F')
-            fw.write(ln)
-            i += 1
-            fw.write('\n')
-
-        i = 8000
-        j = 1
-        for skyra, skydec in zip(*skyradec):
-            ln = _whydra_file_line(i, 'sky{0}'.format(j), skyra, skydec, 'S')
-            fw.write(ln)
-            i += 1
-            j += 1
-            fw.write('\n')
