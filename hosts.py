@@ -406,6 +406,6 @@ def download_with_progress_updates(u, fw, nreports=100, msg=None, outstream=sys.
 
 
 if __name__ == '__main__':
-    h1 = targetting.NSAHost(76316, 'DLG1')
-    h2 = targetting.NSAHost(158901, 'DLG2')
-    h3 = targetting.NSAHost(129387, 'DLG3')
+    h1 = NSAHost(76316, 'DLG1')
+    h2 = NSAHost(158901, 'DLG2')
+    h3 = NSAHost(129387, 'DLG3')
