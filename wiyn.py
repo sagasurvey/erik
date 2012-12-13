@@ -20,6 +20,8 @@ pass the result into `construct_master_catalog`.
 6. copy the .hydra file to the `wiyn_targets` directory
 7. Repeat 3-6 until you have all the configurations you need
 8. Copy them to the WIYN observing computer (oatmean), and observe!
+9. If any FOPS turn out to be galaxies or something, comment them out in the
+   master list and they won't appear in susequent AST files.
 """
 
 import numpy as np
@@ -169,6 +171,9 @@ def construct_master_catalog(host, fnout=None, targetcat=None, fopcat=None,
     dra, ddec = usno_vs_sdss_offset(host.get_sdss_catalog(), host.get_usnob_catalog())
     print 'USNO/SDSS offsets:', dra * 3600, ddec * 3600
 
+    if os.path.exists(fnout):
+        raise ValueError('File for generating master catalog {0} already exists!'.format(fnout))
+
     print 'Constucting catalog in', fnout
     with open(fnout, 'w') as fw:
         #first add host as center, and as object
@@ -263,11 +268,13 @@ def reprocess_master_catalog(mastercatfn, whydraoutputs=None):
     objcode = []
     with open(mastercatfn) as f:
         for l in f:
-            ls = l.split()
-            ids.append(int(ls[0]))
-            names.append(ls[1])
-            objcode.append(ls[4])
-            catlines.append(l)
+            lprecomment = l.split('#')[0]
+            if lprecomment.strip() != '':
+                ls = lprecomment.split()
+                ids.append(int(ls[0]))
+                names.append(ls[1])
+                objcode.append(ls[4])
+                catlines.append(lprecomment)
 
     #ids/names to *remove* because they are in a hydra output already
     ids2 = []
@@ -360,4 +367,6 @@ def generate_ast_file(mastercatfn, lst, obsepoch=None, whydraoutputs=None,
         fw.write('WEIGHTING: WEAK\n')
 
         for l in cataloglines:
-            fw.write(l)
+            lprecomment = l.split('#')[0]
+            if not lprecomment.strip() == '':
+                fw.write(lprecomment)
