@@ -342,3 +342,18 @@ if __name__ == '__main__':
     h2 = NSAHost(46892, 'DLG2')
     h3 = NSAHost(158901, 'DLG3')
     h4 = NSAHost(129387, 'DLG4')
+
+    # load the remainder
+    _preids = [h.nsaid for h in (h1, h2, h3, h4)]
+    i = len(_preids) + 1
+    with open('hosts.dat') as f:
+        f.readline()  # header
+        for l in f:
+            nsanum, ra, dec, z = l.split()
+            nsanum = int(nsanum)
+            locals()['h' + str(i)] = NSAHost(nsanum, 'DLG' + str(i))
+            i += 1
+    #clean up namespace
+    del _preids, h, i, l, f, nsanum, ra, dec, z
+
+
