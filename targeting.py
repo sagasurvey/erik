@@ -12,12 +12,14 @@ NSA_VERSION = '0.1.2'  # used to find the download location/file name
 NSAFILENAME = 'nsa_v{0}.fits'.format(NSA_VERSION.replace('.', '_'))
 
 SDSS_SQL_URL = 'http://skyserver.sdss3.org/dr9/en/tools/search/x_sql.asp'
+SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss3.org/dr9/en/tools/chart/list.asp'
 SDSS_FINDCHART_URL = 'http://skyservice.pha.jhu.edu/DR9/ImgCutout/getjpeg.aspx'
 USNOB_URL = 'http://www.nofs.navy.mil/cgi-bin/vo_cone.cgi'
 
 #SDSS 'type': 3=galaxy, 6=star
 
 
+_cachednsa={}
 def get_nsa(fn=None):
     """
     Download the NASA Sloan Atlas if it hasn't been already, open it, and
@@ -44,6 +46,10 @@ def get_nsa(fn=None):
     if fn is None:
         fn = NSAFILENAME
 
+    if fn in _cachednsa:
+        print 'Using cached NSA for file', fn
+        return _cachednsa[fn]
+
     if os.path.exists(fn):
         print 'Loading NSA from local file', fn
     else:
@@ -59,7 +65,10 @@ def get_nsa(fn=None):
                 u.close()
 
     # use pyfits from astropy to load the data
-    return fits.getdata(fn, 1)
+    res = fits.getdata(fn, 1)
+    _cachednsa[fn] = res
+
+    return res
 
 
 def construct_sdss_query(ra, dec, radius=1, into=None):
@@ -443,3 +452,73 @@ def usno_vs_sdss_offset(sdsscat, usnocat, plots=False, raiseerror=0.5):
         raise ValueError('median separation from USNO to SDSS is {0} arcsec'.format(np.median(d) * 3600))
 
     return np.median(dra2), np.median(ddec2)
+
+
+def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
+    copytoclipboard=True):
+    """
+    Returns the text to be pasted into the sdss image list page.  Also opens
+    the page (if `url` is not None) and copies the text to the clipboard if on
+    a mac or linux.
+
+    Parameters
+    ----------
+    ras : array-like
+        RA of objects to be marked in degrees
+    decs : array-like
+        Dec of objects to be marked in degrees
+    n : int
+        Maximum number of objects (randomly sampled if this is greater than
+        `ras` or `decs` length)
+    url : str or None
+        The URL to the SDSS image list page or None to not open in a web
+        browser.
+    copytoclipboard : bool
+        If True, copies the list of images to the clipboard for use on the SDSS
+        web site
+
+    Returns
+    -------
+    text : str
+        The table to be pasted into the image list text box
+
+    """
+    import webbrowser
+    import platform
+    import os
+
+    if len(ras) != len(decs):
+        raise ValueError('ras and decs not the same size!')
+
+    ras = np.array(ras, copy=False)
+    decs = np.array(decs, copy=False)
+
+    if len(ras) > n:
+        idx = np.random.permutation(len(ras))[:n]
+        ras = ras[idx]
+        decs = decs[idx]
+
+    if names is None:
+        names = [str(i) for i in range(len(ras))]
+
+    text = ['name ra dec']
+    for nmi, rai, deci in zip(names, ras, decs):
+        text.append('{0} {1} {2}'.format(nmi, rai, deci))
+    text = '\n'.join(text)
+
+    if copytoclipboard:
+        if platform.system() == 'Darwin':
+            clipproc = os.popen('pbcopy', 'w')
+            clipproc.write(text)
+            clipproc.close()
+        elif platform.system() == 'Linux':
+            clipproc = os.popen('xsel -i', 'w')
+            clipproc.write(text)
+            clipproc.close()
+        else:
+            print("Not on a mac or linux, so can't use clipboard. ")
+
+    if url:
+        webbrowser.open(url)
+
+    return text

@@ -8,8 +8,6 @@ import sys
 import numpy as np
 from matplotlib import pyplot as plt
 
-SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss3.org/dr9/en/tools/chart/list.asp'
-
 
 class NSAHost(object):
     """
@@ -284,72 +282,6 @@ class NSAHost(object):
         return self._cached_sdss
 
 
-def sampled_imagelist(ras, decs, n=25, url=SDSS_IMAGE_LIST_URL, copytoclipboard=True):
-    """
-    Returns the text to be pasted into the sdss image list page.  Also opens
-    the page (if `url` is not None) and copies the text to the clipboard if on
-    a mac or linux.
-
-    Parameters
-    ----------
-    ras : array-like
-        RA of objects to be marked in degrees
-    decs : array-like
-        Dec of objects to be marked in degrees
-    n : int
-        Maximum number of objects (randomly sampled if this is greater than
-        `ras` or `decs` length)
-    url : str or None
-        The URL to the SDSS image list page or None to not open in a web
-        browser.
-    copytoclipboard : bool
-        If True, copies the list of images to the clipboard for use on the SDSS
-        web site
-
-    Returns
-    -------
-    text : str
-        The table to be pasted into the image list text box
-
-    """
-    import webbrowser
-    import platform
-    import os
-
-    if len(ras) != len(decs):
-        raise ValueError('ras and decs not the same size!')
-
-    ras = np.array(ras, copy=False)
-    decs = np.array(decs, copy=False)
-
-    if len(ras) > n:
-        idx = np.random.permutation(len(ras))[:n]
-        ras = ras[idx]
-        decs = decs[idx]
-
-    text = ['name ra dec']
-    for i, (rai, deci) in enumerate(zip(ras, decs)):
-        text.append('{0} {1} {2}'.format(i, rai, deci))
-    text = '\n'.join(text)
-
-    if copytoclipboard:
-        if platform.system() == 'Darwin':
-            clipproc = os.popen('pbcopy', 'w')
-            clipproc.write(text)
-            clipproc.close()
-        elif platform.system() == 'Linux':
-            clipproc = os.popen('xsel -i', 'w')
-            clipproc.write(text)
-            clipproc.close()
-        else:
-            print("Not on a mac or linux, so can't use clipboard. ")
-
-    if url:
-        webbrowser.open(url)
-
-    return text
-
-
 def download_with_progress_updates(u, fw, nreports=100, msg=None, outstream=sys.stdout):
     """
     Download a file and give progress updates on the download.
@@ -407,5 +339,6 @@ def download_with_progress_updates(u, fw, nreports=100, msg=None, outstream=sys.
 
 if __name__ == '__main__':
     h1 = NSAHost(76316, 'DLG1')
-    h2 = NSAHost(158901, 'DLG2')
-    h3 = NSAHost(129387, 'DLG3')
+    h2 = NSAHost(46892, 'DLG2')
+    h3 = NSAHost(158901, 'DLG3')
+    h4 = NSAHost(129387, 'DLG4')
