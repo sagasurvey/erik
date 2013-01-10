@@ -337,24 +337,40 @@ def download_with_progress_updates(u, fw, nreports=100, msg=None, outstream=sys.
         fw.write(end)
 
 
-if __name__ == '__main__':
-    h1 = NSAHost(76316, 'DLG1')
-    h2 = NSAHost(46892, 'DLG2')
-    h3 = NSAHost(133120, 'DLG3')
-    h4 = NSAHost(32, 'DLG4')
-    h5 = NSAHost(159789, 'DLG5')
+def load_all_hosts(hostsfile='hosts.dat'):
+    """
 
-    # load the remainder
-    _preids = [h.nsaid for h in (h1, h2, h3, h4)]
+    """
+    _preids = []
+    if 'hosts' in globals():
+        for h in globals()['hosts'].values():
+            if isinstance(h, NSAHost):
+                _preids.append(h.nsaid)
+
     i = len(_preids) + 1
-    with open('hosts.dat') as f:
+    with open(hostsfile) as f:
         f.readline()  # header
         for l in f:
             nsanum, ra, dec, z = l.split()
             nsanum = int(nsanum)
             locals()['h' + str(i)] = NSAHost(nsanum, 'DLG' + str(i))
             i += 1
-    #clean up namespace
-    del _preids, h, i, l, f, nsanum, ra, dec, z
 
 
+h1 = NSAHost(76316, 'DLG1')
+h2 = NSAHost(46892, 'DLG2')
+h3 = NSAHost(133120, 'DLG3')
+h4 = NSAHost(156881, 'DLG4')
+h5 = NSAHost(159789, 'DLG5')
+
+hostvarnms = []
+for k, v in locals().items():
+    if k.startswith('h') and isinstance(v, NSAHost):
+        hostvarnms.append(k)
+hostvarnms.sort()
+
+hosts = []
+for k in hostvarnms:
+    hosts.append(locals()[k])
+
+del k, v, hostvarnms   # clean up namespace
