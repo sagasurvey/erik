@@ -340,8 +340,9 @@ def download_with_progress_updates(u, fw, nreports=100, msg=None, outstream=sys.
 if __name__ == '__main__':
     h1 = NSAHost(76316, 'DLG1')
     h2 = NSAHost(46892, 'DLG2')
-    h3 = NSAHost(158901, 'DLG3')
-    h4 = NSAHost(129387, 'DLG4')
+    h3 = NSAHost(133120, 'DLG3')
+    h4 = NSAHost(32, 'DLG4')
+    h5 = NSAHost(159789, 'DLG5')
 
     # load the remainder
     _preids = [h.nsaid for h in (h1, h2, h3, h4)]
