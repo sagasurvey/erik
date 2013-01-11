@@ -11,18 +11,19 @@ NSAHost.usnob_environs_query.)
 
 For each host:
 2. Generate the master catalog with `construct_master_catalog`. If you
-want to adjust any selection parameters, do so in `select_targets` and
-pass the result into `construct_master_catalog`.
+   want to adjust any selection parameters, do so in `select_targets` and
+   pass the result into `construct_master_catalog`.
 3. Create the first whydra input (".ast") file by calling
-`generate_ast_file` with the master catalog from #2.
-4. Copy the .ast file from `wiyn_targets` to the `whydra` directory
-5. Run whydra on this ast file, producing a .hydra file with the same name
-6. (optional) Use `imagelist_selected_fops` on the .hydra file to check if some
+   `generate_ast_file` with the master catalog from #2.
+4. Copy the .ast file from `wiyn_targets` to the `whydra` directory (on dept Linux machines)
+5. Run whydra on this ast file (on dept Linux machines), producing a .hydra
+   file with the same name.  Not that you may want to use the `do_whydra` script.
+6. copy the .hydra file (on dept Linux machines) to the `wiyn_targets` directory
+7. (optional) Use `imagelist_selected_fops` on the .hydra file to check if some
    of the FOP star are galaxies or double stars or something. if so, comment them
    out in the master list and they won't appear in susequent AST files. You might
    also want to re-generate the field you're working on if you're down to 2 or 3
    FOPs.
-7. copy the .hydra file to the `wiyn_targets` directory
 8. Repeat 3-7 until you have all the configurations you need
 9. Copy them to the WIYN observing computer (oatmeal), and observe! (Note that
    you may need to go by way of cork to get to oatmeal)
@@ -124,7 +125,7 @@ def select_sky_positions(host, nsky=250, sdsscat=None, usnocat=None, nearnesslim
 
 
 def construct_master_catalog(host, fnout=None, targetcat=None, fopcat=None,
-    skyradec=None):
+    skyradec=None, faintlimit=None):
     """
     This function produces the "master" catalog for each host for WIYN/hydra
     observations. The master catalog contains lines for all the objects/sky/fops
@@ -153,7 +154,10 @@ def construct_master_catalog(host, fnout=None, targetcat=None, fopcat=None,
         fnout = os.path.join('wiyn_targets', host.name + '.cat')
 
     if targetcat is None:
-        targetcat = select_targets(host)
+        if faintlimit is None:
+            targetcat = select_targets(host)
+        else:
+            targetcat = select_targets(host, faintlimit=faintlimit)
         print len(targetcat), 'objects'
     if fopcat is None:
         fopcat = select_fops(host)
@@ -231,6 +235,9 @@ def _whydra_file_line(i, name, radeg, decdeg, code):
 
     rastr = Angle(radeg, degree).format(hour, sep=':', pad=True, precision=3)
     decstr = Angle(decdeg, degree).format(degree, sep=':', pad=True, precision=2, alwayssign=True)
+
+    if decstr[0] == '-' and decstr[2] == ':':  # missing 0 pad
+        decstr = '-0' + decstr[1:]
 
     if name == 'SDSS':
         name = 'J' + rastr[:-1].replace(':', '') + decstr[:-1].replace(':', '')

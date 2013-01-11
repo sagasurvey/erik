@@ -226,7 +226,7 @@ class NSAHost(object):
 
         raddeg = self.environsarcmin / 60.
 
-        usnourl = construct_usnob_query(self.ra, self.dec, raddeg, verbosity=2)
+        usnourl = construct_usnob_query(self.ra, self.dec, raddeg, verbosity=1)
 
         if dl:
             u = urllib2.urlopen(usnourl)
@@ -256,6 +256,10 @@ class NSAHost(object):
                 for l in f:
                     if l.startswith('#1') and 'id' in l:
                         colnames = [nm.strip() for nm in l.replace('#1', '').split('|') if nm.strip() != '']
+                        #now if there's a group of "S/G" columns, add the appropriate mag suffix
+                        for i in range(len(colnames)):
+                            if colnames[i] == 'S/G':
+                                colnames[i] = colnames[i] + '_' + colnames[i - 1]
                         break
                 else:
                     raise ValueError('USNO-B catalog does not have header - wrong format?')
