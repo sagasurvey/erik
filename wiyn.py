@@ -25,8 +25,11 @@ For each host:
    also want to re-generate the field you're working on if you're down to 2 or 3
    FOPs.
 8. Repeat 3-7 until you have all the configurations you need
-9. Copy them to the WIYN observing computer (oatmeal), and observe! (Note that
-   you may need to go by way of cork to get to oatmeal)
+9. Run the `generate_wiyn_cache` function to generate the cache, and upload it via
+   the WIYN web interface.
+10. Copy .hydra files to the WIYN observing computer (oatmeal) (Note that
+    you may need to go by way of cork to get to oatmeal)
+11. Observe!
 """
 
 import numpy as np
@@ -463,3 +466,68 @@ def imagelist_selected_fops(hydrafile, copytoclipboard=True):
     print 'FOP fibers', fibs
 
     return sampled_imagelist(ras, decs, len(ras), names=names, copytoclipboard=copytoclipboard)
+
+
+def generate_wiyn_cache(outfn, infns='wiyn_targets/*.hydra'):
+    """
+    Generate the file of target positions in the format WIYN wants.
+
+    Submit it at the WIYN web page at http://www-kpno.kpno.noao.edu/Info/submitcache.html
+
+    Parameters
+    ----------
+    outfn : str or None
+        The name of a file to save the cache into, or None to return the file
+        contents.
+    infns : str or list of strings
+        The files or file patterns of the hydra files to generate from
+
+    Returns
+    -------
+    The file contents if `outfn` is None.
+    """
+    from glob import glob
+
+    if isinstance(infns, basestring):
+        infns = glob(infns)
+    else:
+        newinfns = []
+        for infn in infns:
+            newinfns.extend(glob(infn))
+        infns = newinfns
+
+    cenlines = {}
+    for infn in infns:
+        currnm = None
+        with open(infn) as fr:
+            for l in fr:
+                if l.startswith('FIELD NAME'):
+                    currnm = l[11:].strip()
+                ls = l.split()
+                if len(ls) > 8 and ls[8] == 'C':
+                    if currnm is None:
+                        raise ValueError('Field {0} does not have a name!'.format(infn))
+                    cenlines[currnm] = l
+                    break
+            else:
+                raise ValueError('File {0} did not have a center!'.format(infn))
+
+    maxchars = max([len(nm) for nm in cenlines])
+    paddednms = []
+    for nm in sorted(cenlines):
+        blankchars = maxchars + 1 - len(nm)
+        paddednms.append(nm + ' ' * blankchars)
+
+    outlines = []
+    for nm, k in zip(paddednms, sorted(cenlines)):
+        rastr = cenlines[k][26:38]
+        decstr = cenlines[k][39:52]
+
+        outlines.append('{nm} {rastr} {decstr}\n'.format(nm=nm, rastr=rastr, decstr=decstr))
+
+    if outfn is None:
+        return ''.join(outlines)
+    else:
+        with open(outfn, 'w') as fw:
+            for l in outlines:
+                fw.write(l)
