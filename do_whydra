@@ -72,10 +72,21 @@ try:
     p.communicate(inpt)
     retcode = p.wait()
 
-    if retcode == 0:
-        print 'whydra finished sucessfully.  Results logged to:', outf.name
-    else:
-        print 'whydra failed with retcode %i!  Results logged to:' % retcode, outf.name
-
 finally:
     outf.close()
+
+if retcode == 0:
+    print 'whydra finished sucessfully.  Results logged to:', outf.name
+
+    outf = open(outf.name, 'r')
+    try:
+        l2 = l1 = None
+        for l in outf:
+            l2 = l1
+            l1 = l
+        print 'Last two lines:\n',l2,l1
+    finally:
+        outf.close()
+
+else:
+    print 'whydra failed with retcode %i!  Results logged to:' % retcode, outf.name

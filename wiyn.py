@@ -3,7 +3,7 @@ from __future__ import division
 """
 These functions are for the "Distant local groups" project WIYN-related work.
 
-How to design WIYN configurations:
+How to design HYDRA configurations:
 
 1. Choose your hosts, and make sure you have the SDSS and USNO catalogs
 downloaded for those hosts. (See NSAHost.sdss_environs_query and
@@ -338,7 +338,8 @@ def reprocess_master_catalog(mastercatfn, whydraoutputs=None):
 
 
 def generate_ast_file(mastercatfn, lst, obsepoch=None, whydrafiles=None,
-    texp=1.5, wl=7000, finame=None, outdir='wiyn_targets', faintmagcut=None):
+    texp=1.5, wl=7000, finame=None, outdir='wiyn_targets', faintmagcut=None,
+    scpname='turtle', scpusername='ejt26'):
     """
     Create the `.ast` file for input into the `whydra` program.
 
@@ -375,6 +376,10 @@ def generate_ast_file(mastercatfn, lst, obsepoch=None, whydrafiles=None,
     faintmagcut : float or None
         A lower magnitude to cut off at if only bright objects are desired in
         this ast file.
+    scpname : str
+        The name of the computer to use in the scp commands displayed at the end.
+    scpusername : str
+        The username for the directories in the scp commands displayed at the end.
     """
 
     import time
@@ -437,8 +442,12 @@ def generate_ast_file(mastercatfn, lst, obsepoch=None, whydrafiles=None,
                 if not lprecomment.endswith('\n'):
                     fw.write('\n')
 
+    print 'SCP commands:'
+    print 'scp {0} {scpname}:/home/{scpusername}/hydra_simulator/whydra'.format(fnout, scpname=scpname, scpusername=scpusername)
+    print 'scp "{scpname}:/home/{scpusername}/hydra_simulator/whydra/{0}.hydra" wiyn_targets'.format(finame, scpname=scpname, scpusername=scpusername)
 
-def imagelist_selected_fops(hydrafile, copytoclipboard=True):
+
+def imagelist_selected_fops(hydrafile, copytoclipboard=True, openurl=True):
     """
     Views the FOPs from `hydrafile` in the SDSS image list utility site.  See
     `targeting.sampled_imagelist` for more details.
@@ -465,7 +474,39 @@ def imagelist_selected_fops(hydrafile, copytoclipboard=True):
     print 'FOP names', names
     print 'FOP fibers', fibs
 
-    return sampled_imagelist(ras, decs, len(ras), names=names, copytoclipboard=copytoclipboard)
+    if openurl:
+        return sampled_imagelist(ras, decs, len(ras), names=names, copytoclipboard=copytoclipboard)
+    else:
+        return sampled_imagelist(ras, decs, len(ras), names=names, copytoclipboard=copytoclipboard, url=None)
+
+
+def imagelist_all_fops(mastercatfn, copytoclipboard=True, openurl=True):
+    """
+    Shows all the fops from the master list
+    """
+    from targeting import sampled_imagelist
+
+    ras = []
+    decs = []
+    names = []
+
+    with open(mastercatfn) as f:
+        for l in f:
+            ls = l.split()
+
+            if l[0].startswith('#') or len(ls) < 5:
+                continue
+
+            if ls[4] == 'F':
+                names.append(ls[1])
+                ras.append(ls[2])
+                decs.append(ls[3])
+
+    if openurl:
+        return sampled_imagelist(ras, decs, len(ras), names=names, copytoclipboard=copytoclipboard)
+    else:
+        return sampled_imagelist(ras, decs, len(ras), names=names, copytoclipboard=copytoclipboard, url=None)
+
 
 
 def generate_wiyn_cache(outfn, infns='wiyn_targets/*.hydra'):

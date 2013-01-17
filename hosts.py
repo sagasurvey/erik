@@ -192,6 +192,7 @@ class NSAHost(object):
         ValueError
             if the requested id is not in the catalog.
         """
+        from os.path import exists
         from targeting import construct_sdss_query, download_sdss_query
 
         raddeg = self.environsarcmin / 60.
@@ -200,13 +201,16 @@ class NSAHost(object):
             into=None if dl else ('NSA{0}_environs'.format(self.nsaid)))
 
         if dl:
-            msg = 'Downloading NSA ID{0} to {1}'.format(self.nsaid, self.fnsdss)
-            download_sdss_query(query, fn=self.fnsdss, dlmsg=msg,
-                inclheader='Environs of NSA Object {0}'.format(self.nsaid))
+            if exists(self.fnsdss):
+                print 'File', self.fnsdss, 'exists - not downloading anything.'
+            else:
+                msg = 'Downloading NSA ID{0} to {1}'.format(self.nsaid, self.fnsdss)
+                download_sdss_query(query, fn=self.fnsdss, dlmsg=msg,
+                    inclheader='Environs of NSA Object {0}'.format(self.nsaid))
         else:
             return query
 
-    def usnob_environs_query(self, dl=True):
+    def usnob_environs_query(self, dl=False):
         """
         Constructs a query to get USNO-B objects around this host, and
         possibly downloads the catalog.
@@ -221,6 +225,7 @@ class NSAHost(object):
             If True, download the catalog
 
         """
+        from os.path import exists
         import urllib2
         from targeting import construct_usnob_query
 
@@ -229,13 +234,16 @@ class NSAHost(object):
         usnourl = construct_usnob_query(self.ra, self.dec, raddeg, verbosity=1)
 
         if dl:
-            u = urllib2.urlopen(usnourl)
-            try:
-                with open(self.fnusnob, 'w') as fw:
-                    download_with_progress_updates(u, fw,
-                        msg='Downloading USNO-B to ' + self.fnusnob)
-            finally:
-                u.close()
+            if exists(self.fnusnob):
+                print 'File', self.fnusnob, 'exists - not downloading anything.'
+            else:
+                u = urllib2.urlopen(usnourl)
+                try:
+                    with open(self.fnusnob, 'w') as fw:
+                        download_with_progress_updates(u, fw,
+                            msg='Downloading USNO-B to ' + self.fnusnob)
+                finally:
+                    u.close()
         else:
             return usnourl
 
