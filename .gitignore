@@ -1,4 +1,4 @@
 *.pyc
 *.fits
 catalogs/*
-wiyn_targets/*
+hydra_targets/*

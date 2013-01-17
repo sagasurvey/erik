@@ -15,10 +15,10 @@ For each host:
    pass the result into `construct_master_catalog`.
 3. Create the first whydra input (".ast") file by calling
    `generate_ast_file` with the master catalog from #2.
-4. Copy the .ast file from `wiyn_targets` to the `whydra` directory (on dept Linux machines)
+4. Copy the .ast file from `hydra_targets` to the `whydra` directory (on dept Linux machines)
 5. Run whydra on this ast file (on dept Linux machines), producing a .hydra
    file with the same name.  Not that you may want to use the `do_whydra` script.
-6. copy the .hydra file (on dept Linux machines) to the `wiyn_targets` directory
+6. copy the .hydra file (on dept Linux machines) to the `hydra_targets` directory
 7. (optional) Use `imagelist_selected_fops` on the .hydra file to check if some
    of the FOP star are galaxies or double stars or something. if so, comment them
    out in the master list and they won't appear in susequent AST files. You might
@@ -154,7 +154,7 @@ def construct_master_catalog(host, fnout=None, targetcat=None, fopcat=None,
     from targeting import usno_vs_sdss_offset, select_targets
 
     if fnout is None:
-        fnout = os.path.join('wiyn_targets', host.name + '.cat')
+        fnout = os.path.join('hydra_targets', host.name + '.cat')
 
     if targetcat is None:
         if faintlimit is None:
@@ -275,7 +275,7 @@ def reprocess_master_catalog(mastercatfn, whydraoutputs=None):
 
     if whydraoutputs is None:
         basename = path.split(mastercatfn)[-1].split('.')[0]
-        whydraoutputs = glob('wiyn_targets/{basenm}*.hydra'.format(basenm=basename))
+        whydraoutputs = glob('hydra_targets/{basenm}*.hydra'.format(basenm=basename))
     print 'Using existing catalogs', whydraoutputs, 'for removing from master'
 
     ids = []
@@ -338,7 +338,7 @@ def reprocess_master_catalog(mastercatfn, whydraoutputs=None):
 
 
 def generate_ast_file(mastercatfn, lst, obsepoch=None, whydrafiles=None,
-    texp=1.5, wl=7000, finame=None, outdir='wiyn_targets', faintmagcut=None,
+    texp=1.5, wl=7000, finame=None, outdir='hydra_targets', faintmagcut=None,
     scpname='turtle', scpusername='ejt26'):
     """
     Create the `.ast` file for input into the `whydra` program.
@@ -444,7 +444,7 @@ def generate_ast_file(mastercatfn, lst, obsepoch=None, whydrafiles=None,
 
     print 'SCP commands:'
     print 'scp {0} {scpname}:/home/{scpusername}/hydra_simulator/whydra'.format(fnout, scpname=scpname, scpusername=scpusername)
-    print 'scp "{scpname}:/home/{scpusername}/hydra_simulator/whydra/{0}.hydra" wiyn_targets'.format(finame, scpname=scpname, scpusername=scpusername)
+    print 'scp "{scpname}:/home/{scpusername}/hydra_simulator/whydra/{0}.hydra" hydra_targets'.format(finame, scpname=scpname, scpusername=scpusername)
 
 
 def imagelist_selected_fops(hydrafile, copytoclipboard=True, openurl=True):
@@ -509,7 +509,7 @@ def imagelist_all_fops(mastercatfn, copytoclipboard=True, openurl=True):
 
 
 
-def generate_wiyn_cache(outfn, infns='wiyn_targets/*.hydra'):
+def generate_wiyn_cache(outfn, infns='hydra_targets/*.hydra'):
     """
     Generate the file of target positions in the format WIYN wants.
 
