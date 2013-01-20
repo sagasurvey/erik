@@ -293,6 +293,16 @@ class NSAHost(object):
 
         return self._cached_sdss
 
+    def open_on_nsasite(self):
+        """
+        Uses `webbrowser` to open the page for this host on the NSA web site.
+        """
+        import webbrowser
+
+        urltempl = 'http://www.nsatlas.org/getAtlas.html?search=nsaid&nsaID={0}&submit_form=Submit'
+
+        webbrowser.open(urltempl.format(self.nsaid))
+
 
 def download_with_progress_updates(u, fw, nreports=100, msg=None, outstream=sys.stdout):
     """

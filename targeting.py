@@ -3,6 +3,8 @@ from __future__ import division
 """
 These functions are for the "Distant local groups" project target selection.
 """
+#important note: SDSS 'type' field: 3=galaxy, 6=star
+
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -14,10 +16,11 @@ NSAFILENAME = 'nsa_v{0}.fits'.format(NSA_VERSION.replace('.', '_'))
 SDSS_SQL_URL = 'http://skyserver.sdss3.org/dr9/en/tools/search/x_sql.asp'
 SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss3.org/dr9/en/tools/chart/list.asp'
 SDSS_FINDCHART_URL = 'http://skyservice.pha.jhu.edu/DR9/ImgCutout/getjpeg.aspx'
+
 USNOB_URL = 'http://www.nofs.navy.mil/cgi-bin/vo_cone.cgi'
 
-#SDSS 'type': 3=galaxy, 6=star
-
+GAMA_URL = 'http://www.gama-survey.org/dr1/data/GamaCoreDR1_v1.csv.gz'
+#gama sted limit: r < 19.8
 
 _cachednsa={}
 def get_nsa(fn=None):
@@ -40,7 +43,6 @@ def get_nsa(fn=None):
     from urllib2 import urlopen
 
     from astropy.io import fits
-
     from hosts import download_with_progress_updates
 
     if fn is None:
@@ -69,6 +71,53 @@ def get_nsa(fn=None):
     _cachednsa[fn] = res
 
     return res
+
+
+_cachedgama = {}
+def get_gama(fn=None):
+    """
+    Download or load the GAMA survey data
+
+    Parameters
+    ----------
+    fn : str or None
+        A file to load from or None to use the default.
+    Returns
+    -------
+    gamadata
+        The data as an astropy `Table`.  Table will also have `decmax`,
+        `decmin`, `ramax`, and `ramin`.
+    """
+    import os
+    from urllib2 import urlopen
+
+    from astropy.io import ascii
+    from hosts import download_with_progress_updates
+
+    if fn is None:
+        fn = os.path.join('catalogs', os.path.split(GAMA_URL)[-1])
+
+    if fn in _cachedgama:
+        #print 'Using cached GAMA for file', fn
+        return _cachedgama[fn]
+
+    if not os.path.exists(fn):
+        with open(fn, 'w') as fw:
+            msg = 'Downloading GAMA from ' + GAMA_URL + ' to ' + fn
+            u = urlopen(GAMA_URL)
+            try:
+                download_with_progress_updates(u, fw, msg=msg)
+            finally:
+                u.close()
+
+    tab = _cachedgama[fn] = ascii.read(fn, delimiter=',', guess=False)
+
+    tab.ramax = np.max(tab['RA_J2000'])
+    tab.ramin = np.min(tab['RA_J2000'])
+    tab.decmax = np.max(tab['DEC_J2000'])
+    tab.decmin = np.min(tab['DEC_J2000'])
+
+    return tab
 
 
 def construct_sdss_query(ra, dec, radius=1, into=None):
@@ -261,8 +310,8 @@ def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
 
 def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     galvsallcutoff=20, inclspecqsos=False, removespecstars=True,
-    removegalsathighz=True, photflags=True, outercutrad=250, innercutrad=20,
-    randomize=True):
+    removegalsathighz=True, removegama='now', photflags=True,
+    outercutrad=250, innercutrad=20, randomize=True):
     """
     Selects targets from the SDSS catalog.
 
@@ -285,6 +334,11 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     removegalsathighz : bool
         Whether or not to ignore SDSS spectroscopic targets classified as
         galaxies but with redshfits > 3*zerr +z_host
+    removegama : str
+        If not empty string/False, don't select targets that are already in
+        GAMA.  Can be 'all' or 'now' to remove targets that will *eventually* be
+        in GAMA, or just those currently observed. Note that the tolerance is
+        currently 1 arcsec, which seems fine based on a check of one field.
     photflags : bool
         Apply the extended object recommended photometry flags (see
         http://www.sdss3.org/dr9/tutorials/flags.php)
@@ -372,11 +426,87 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         highzgals = gals & ((cat['spec_z']) > (host.zspec + 3 * host.zdisterr))
         msk[highzgals] = False
 
+    if removegama:
+        g = get_gama()
+        if (host.dec + outercutraddeg > g.decmax or
+            host.dec - outercutraddeg < g.decmin or
+            host.ra + outercutraddeg > g.ramax or
+            host.ra - outercutraddeg < g.ramin):
+            print 'Host not in GAMA area - not looking at GAMA'
+        else:
+            if removegama == 'all':
+                future = True
+            elif removegama == 'now':
+                future = False
+            else:
+                raise ValueError('invalid removegama')
+
+            gamamatchmsk = find_gama(cat, host, outercutraddeg, tol=1 / 3600.,
+                matchfuture=future)[0]
+
+            msk = msk & ~gamamatchmsk
+
+
+
     res = cat[msk]
     if randomize:
         res = res[np.random.permutation(len(res))]
 
     return res
+
+
+def find_gama(cat, host, raddeg, tol, matchfuture=True):
+    """
+    Find GAMA objects that match the given ra/decs within a tolerance
+
+    Parameters
+    ----------
+    catra : record array
+        The catalog of objects to match
+    host : NSAHost
+        The host
+    raddeg : array
+        The radius of the field in degrees
+    tol : float
+        The distance (in degrees) of a "close enough" match.
+    matchfuture : bool
+        If True, include things that are planned for future GAMA releases.
+        Otherwise, only accepts things that are currently in GAMA
+
+    Returns
+    -------
+    msk : bool array
+        An array that's true if the catalog entry has a matching GAMA object
+    gamacat : Table
+        The corresponding GAMA entries
+    ds : float array
+        On sky-distances (w/o cos(dec)) between GAMA and SDSS
+    """
+    from scipy import spatial
+
+    catra = cat['ra']
+    catdec = cat['dec']
+    ra0 = host.ra
+    dec0 = host.dec
+
+    g = get_gama()
+    gamacoverage = ( (g['RA_J2000'] < (ra0 + raddeg)) &
+                     (g['RA_J2000'] > (ra0 - raddeg)) &
+                     (g['DEC_J2000'] < (dec0 + raddeg)) &
+                     (g['DEC_J2000'] > (dec0 - raddeg)) )
+
+    if matchfuture:
+        gamaspec = g['Z_QUALITY'] > 2
+    else:
+        gamaspec = (g['Z_HELIO'] > -2) & (g['Z_QUALITY'] > 2)
+
+    gm = g[gamacoverage & gamaspec]
+    kdt = spatial.cKDTree(np.array([gm['RA_J2000'], gm['DEC_J2000']]).T)
+
+    ds, idx = kdt.query(np.array([catra, catdec]).T)
+
+    msk = ds < tol
+    return msk, gm[idx[msk]], ds[msk]
 
 
 def usno_vs_sdss_offset(sdsscat, usnocat, plots=False, raiseerror=0.5):
@@ -500,6 +630,7 @@ def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
 
     if names is None:
         names = [str(i) for i in range(len(ras))]
+    names = np.array(names, copy=False)[idx]
 
     text = ['name ra dec']
     for nmi, rai, deci in zip(names, ras, decs):
