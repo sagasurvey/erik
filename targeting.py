@@ -623,6 +623,7 @@ def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
     ras = np.array(ras, copy=False)
     decs = np.array(decs, copy=False)
 
+    idx = None
     if len(ras) > n:
         idx = np.random.permutation(len(ras))[:n]
         ras = ras[idx]
@@ -630,7 +631,8 @@ def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
 
     if names is None:
         names = [str(i) for i in range(len(ras))]
-    names = np.array(names, copy=False)[idx]
+    if idx is not None:
+        names = np.array(names, copy=False)[idx]
 
     text = ['name ra dec']
     for nmi, rai, deci in zip(names, ras, decs):

@@ -52,4 +52,33 @@ def plot_targets_and_imacs_fov(host, camera='short', offset=(0, 0), clf=True, **
     plt.plot(xcorners, ycorners, 'k-')
 
 
+def build_imacs_targetlists(host, onlygals=True):
+    import os
+    import targeting
 
+    cat = host.get_sdss_catalog() # needed for ref stars
+
+    targs = targeting.select_targets(host)
+
+    if onlygals:
+        galmsk = targs['type'] == 3
+        targs = targs[galmsk]
+
+    refmsk = (17 < cat['psf_r']) & (cat['psf_r'] < 19)
+    for band in 'gri':
+        refmsk & (np.abs(cat[band] - cat['psf_' + band]) < 0.25)
+
+    fnobj = 'imacs_targets/{0}.dat'.format(host.name)
+
+    if os.path.exists(fnobj):
+        raise ValueError('Object catalog ({0}) already exists!'.format(fnobj))
+
+    with open(fnobj, 'w') as f:
+        f.write('&RADEGREE\n')
+        f.write('@{0} {1} {2} -10\n'.format(host.name, host.ra, host.dec))
+        for t in targs:
+            f.write('@{0} {1} {2} {3}\n'.format(*[t[n] for n in 'objID,ra,dec,r'.split(',')]))
+
+        #now the reference stars
+        for t in cat[refmsk]:
+            f.write('*{0} {1} {2} #r={3}\n'.format(*[t[n] for n in 'objID,ra,dec,r'.split(',')]))
