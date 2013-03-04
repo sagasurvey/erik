@@ -288,8 +288,19 @@ class NSAHost(object):
         """
         if getattr(self, '_cached_sdss', None) is None:
             from astropy.io import ascii
+            from astropy.table import Column
 
-            self._cached_sdss = ascii.read(self.fnsdss, delimiter=',')
+            self._cached_sdss = tab = ascii.read(self.fnsdss, delimiter=',')
+
+            #add UBVRI converted from SDSS mags
+            U, B, V, R, I = sdss_to_UBVRI(*[tab[b] for b in 'ugriz'])
+            pU, pB, pV, pR, pI = sdss_to_UBVRI(*[tab['psf_' + b] for b in 'ugriz'])
+
+            for b in 'UBVRI':
+                tab.add_column(Column(b, locals()[b]))
+            for b in 'UBVRI':
+                tab.add_column(Column('psf_' + b, locals()['p' + b]))
+
 
         return self._cached_sdss
 
@@ -378,12 +389,34 @@ def load_all_hosts(hostsfile='hosts.dat'):
             locals()['h' + str(i)] = NSAHost(nsanum, 'DLG' + str(i))
             i += 1
 
+def sdss_to_UBVRI(u, g, r, i, z):
+    """
+    Converts SDSS ugriz to UBVRI - uses Jordi+ from
+    http://www.sdss3.org/dr9/algorithms/sdssUBVRITransform.php
+
+    Returns (U, B, V, R, I)
+    """
+    UmB   =     (0.52)*(u-g)    + (0.53)*(g-r) - (0.82)
+    Bmg   =     (0.313)*(g-r)  + (0.219)
+    Vmg   =     (-0.565)*(g-r) - (0.016)
+    Rmr   =     (-0.153)*(r-i) - (0.117)
+    Imi   =     (-0.386)*(i-z) - (0.397)
+
+    B = Bmg + g
+    U = UmB + B
+    V = Vmg + g
+    R = Rmr + r
+    I = Imi + i
+
+    return U, B, V, R, I
+
 
 h1 = NSAHost(76316, 'DLG1')
 h2 = NSAHost(46892, 'DLG2')
 h3 = NSAHost(133120, 'DLG3')
 h4 = NSAHost(156881, 'DLG4')
 h5 = NSAHost(159789, 'DLG5')
+h6 = NSAHost(140594, 'DLG6')
 
 hostvarnms = []
 for k, v in locals().items():
