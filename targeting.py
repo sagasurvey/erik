@@ -22,6 +22,8 @@ USNOB_URL = 'http://www.nofs.navy.mil/cgi-bin/vo_cone.cgi'
 GAMA_URL = 'http://www.gama-survey.org/dr1/data/GamaCoreDR1_v1.csv.gz'
 #gama sted limit: r < 19.8
 
+TELL_IF_USING_CACHED = False  # If True, show an informational message about where the NSA is coming from
+
 _cachednsa={}
 def get_nsa(fn=None):
     """
@@ -49,11 +51,13 @@ def get_nsa(fn=None):
         fn = NSAFILENAME
 
     if fn in _cachednsa:
-        print 'Using cached NSA for file', fn
+        if TELL_IF_USING_CACHED:
+            print 'Using cached NSA for file', fn
         return _cachednsa[fn]
 
     if os.path.exists(fn):
-        print 'Loading NSA from local file', fn
+        if TELL_IF_USING_CACHED:
+            print 'Loading NSA from local file', fn
     else:
         # download the file if it hasn't been already
         NSAurl = 'http://sdss.physics.nyu.edu/mblanton/v0/' + NSAFILENAME
@@ -432,8 +436,9 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
             host.dec - outercutraddeg < g.decmin or
             host.ra + outercutraddeg > g.ramax or
             host.ra - outercutraddeg < g.ramin):
-            print 'Host not in GAMA area - not looking at GAMA'
+            pass#print 'Host not in GAMA area - not looking at GAMA'
         else:
+            print 'Found host', host.name, 'in GAMA!'
             if removegama == 'all':
                 future = True
             elif removegama == 'now':

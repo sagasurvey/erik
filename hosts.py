@@ -77,6 +77,7 @@ class NSAHost(object):
         self.zdist = obj['ZDIST']
         self.zdisterr = obj['ZDIST_ERR']
         self.zspec = obj['Z']
+        self.mstar = obj['MASS']
 
         for i, band in enumerate('FNugriz'):
             setattr(self, band, obj['ABSMAG'][i])
@@ -370,24 +371,38 @@ def download_with_progress_updates(u, fw, nreports=100, msg=None, outstream=sys.
         fw.write(end)
 
 
-def load_all_hosts(hostsfile='hosts.dat'):
+def load_all_hosts(hostsfile='hosts.dat', existinghosts='globals', usedlgname=False):
     """
+    Loads all the hosts in the specified host file and resturns them
+    as a dictionary.
 
+    If `existinghosts` is 'globals', it will be taken from from the global
+    variable named 'hosts' if it exists.  Otherwise it is a list with all
+    the existing NSA hosts
     """
-    _preids = []
-    if 'hosts' in globals():
-        for h in globals()['hosts'].values():
+    d = {}
+
+    if existinghosts == 'globals':
+        existinghosts = globals().get('hosts', None)
+
+    ids = []
+    if existinghosts is not None:
+        for h in existinghosts:
             if isinstance(h, NSAHost):
-                _preids.append(h.nsaid)
+                ids.append(h.nsaid)
 
-    i = len(_preids) + 1
+    i = 1
     with open(hostsfile) as f:
         f.readline()  # header
         for l in f:
+            while i in ids:
+                i += 1
             nsanum, ra, dec, z = l.split()
             nsanum = int(nsanum)
-            locals()['h' + str(i)] = NSAHost(nsanum, 'DLG' + str(i))
+            d['h' + str(i)] = NSAHost(nsanum, 'DLG' + str(i) if usedlgname else None)
             i += 1
+
+    return d
 
 def sdss_to_UBVRI(u, g, r, i, z):
     """
