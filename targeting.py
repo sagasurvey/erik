@@ -372,11 +372,8 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     #type==3 is an imaging-classified galaxy - but only do it if you're brighter than galvsallcutoff
     nonphotgal = (cat['type'] == 3) | (mag > galvsallcutoff)
 
-    #TODO: APPLY FLAGS!
-    flagcuts = np.ones_like(nonphotgal)
-
     #base selection is based on the above
-    msk = magcuts & nonphotgal & flagcuts
+    msk = magcuts & nonphotgal
 
     cdec = cos(radians(host.dec))
 
@@ -419,6 +416,8 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     #include SDSS spectroscopy QSOs
     specqsos = cat['spec_class'] == 'QSO'
     msk[specqsos] = inclspecqsos
+    if inclspecqsos:
+        print 'Found', sum(specqsos), 'QSO candidates'
 
     if removespecstars:
         specstars = cat['spec_class'] == 'STAR'
@@ -428,6 +427,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         gals = cat['spec_class'] == 'GALAXY'
         #"high" z means more than 3sigma above the host's redshift
         highzgals = gals & ((cat['spec_z']) > (host.zspec + 3 * host.zdisterr))
+        lowzgals = gals & ((cat['spec_z']) <= (host.zspec + 3 * host.zdisterr))
         msk[highzgals] = False
 
     if removegama:
@@ -636,7 +636,7 @@ def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
 
     if names is None:
         names = [str(i) for i in range(len(ras))]
-    if idx is not None:
+    elif idx is not None:
         names = np.array(names, copy=False)[idx]
 
     text = ['name ra dec']

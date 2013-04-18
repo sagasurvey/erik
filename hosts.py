@@ -57,6 +57,7 @@ class NSAHost(object):
     def __init__(self, nsaid, name=None, environsradius=-35, fnsdss=None, fnusnob=None):
         from targeting import get_nsa
         from os import path
+        from astropy.coordinates import ICRSCoordinates
 
         self.nsaid = nsaid  # The NSA ID #
         self.name = 'NSA{0}'.format(self.nsaid) if name is None else name
@@ -78,6 +79,12 @@ class NSAHost(object):
         self.zdisterr = obj['ZDIST_ERR']
         self.zspec = obj['Z']
         self.mstar = obj['MASS']
+
+        galcoord = ICRSCoordinates(self.ra, self.dec, unit=('deg', 'deg')).galactic
+        self.l = galcoord.l.degrees
+        self.b = galcoord.b.degrees
+
+
 
         for i, band in enumerate('FNugriz'):
             setattr(self, band, obj['ABSMAG'][i])
