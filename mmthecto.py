@@ -2,26 +2,33 @@
 This file contains functions for targeting objects as part of the "distant
 local group" project using MMT/Hectospec.
 """
+import numpy as np
+
 import targeting
 from astropy import units as u
 
 
-def make_catalog(host, fnout=None, targetfaintlim=21., targetoutercutrad=300,
+def make_catalog(host, fnout=None, targetfaintlim=(21.,22.), targetoutercutrad=300,
                  fluxrng=(17., 17.7), repeatflux=1, guidestarmagrng= (14, 15),
-                 removegalsathighz=False, inclspecqsos=True, removespecstars=False):
+                 removegalsathighz=False, inclspecqsos=True, removespecstars=False,
+                 fibermag_faintlimit=(22., 23.), fibermag_brightlimit=17,
+                 fibermag_type='fibermag_r', useoutertargets=False):
     """
     Generates a catalog for the Hectospec "XFITFIBS" program.
 
     `targetfaintlim` can be just a mag to make everything "primary", or
     a 2-tuple that is (prisecboundary, faintestsec)
 
-    `usefaintflux` means go down to 18.5 instead of just 17.1 .  `repeatflux` is
-    the number of times to repeat each flux star (e.g., the number of expected
-    configs).
+    `useoutertargets` means include targets beyond `targetoutercutrad`, but with
+    a rank below where they would usually be
 
     Writes catalog to `fnout` if `fnout` is not None
 
     Returns the catalog as a `Table`
+
+    `fibermag_faintlimit` is a lower limit *or* a two-tuple of limits for
+    primary and secondary targets (secondary ignored if `targetfainlim` is just
+    a single number) can also be None (`fibermag_brightlimit` can also be None)
     """
     from astropy.coordinates import Angle
     from astropy.table import Table
@@ -29,7 +36,7 @@ def make_catalog(host, fnout=None, targetfaintlim=21., targetoutercutrad=300,
     fluxrank = 1
     hostrank = 2
     prisatrank = 3
-    secsatrank = 4
+    secsatrank = 5 if useoutertargets else 4 #the outer primaries get 4 if `useoutertargets` is True
 
 
     tabentries = []
@@ -49,17 +56,63 @@ def make_catalog(host, fnout=None, targetfaintlim=21., targetoutercutrad=300,
         prisecbounday, seclimit = targetfaintlim
     except TypeError:
         prisecbounday = seclimit = targetfaintlim
-    targs = targeting.select_targets(host, faintlimit=seclimit, outercutrad=targetoutercutrad, removegalsathighz=removegalsathighz, removespecstars=removespecstars, inclspecqsos=inclspecqsos)
+
+
+    if useoutertargets:
+        targs = targeting.select_targets(host, faintlimit=seclimit, outercutrad=None, innercutrad=20, removegalsathighz=removegalsathighz, removespecstars=removespecstars, inclspecqsos=inclspecqsos)
+
+        if targetoutercutrad < 0:  # arcmin
+            outercutraddeg = -targetoutercutrad / 60.
+        else:  # kpc
+            outercutraddeg = np.degrees(targetoutercutrad / (1000 * host.distmpc))
+        outermsk = targs['rhost'] > outercutraddeg
+    else:
+        targs = targeting.select_targets(host, faintlimit=seclimit, outercutrad=targetoutercutrad, removegalsathighz=removegalsathighz, removespecstars=removespecstars, inclspecqsos=inclspecqsos)
+        outermsk = None
 
     print 'Found', len(targs), 'targets'
-    for t in targs:
+    if outermsk is not None:
+        print (~outermsk).sum(), 'are in the inner zone'
+    if prisecbounday != seclimit:
+        print np.sum(targs['r'] < prisecbounday), 'Primaries and',np.sum((targs['r'] > prisecbounday) & (targs['r'] < seclimit)),'Secondaries'
+        if outermsk is not None:
+            inrtargs = targs[~outermsk]
+            print np.sum(inrtargs['r'] < prisecbounday), 'Primaries and',np.sum((inrtargs['r'] > prisecbounday) & (inrtargs['r'] < seclimit)),'Secondaries are in the inner zone'
+
+
+
+    if fibermag_faintlimit is not None:
+        try:
+            prifiberlimit, secfiberlimit = fibermag_faintlimit
+        except TypeError:
+            prifiberlimit = secfiberlimit = fibermag_faintlimit
+
+        fibmag = targs[fibermag_type]
+
+        #filter things that have faint fiber mags in the primary targets
+        primsk = (targs['r'] < prisecbounday) & (fibmag < prifiberlimit)
+        #filter things that have faint fiber mags in the secondart targets
+        secmsk = (targs['r'] > prisecbounday) & (targs['r'] < seclimit) & (fibmag < secfiberlimit)
+
+        print 'Accepting', primsk.sum(), 'primary targets and', secmsk.sum(), 'secondaries according to fiber faint limit'
+        targs = targs[primsk | secmsk]
+
+    if fibermag_brightlimit is not None:
+        msk = targs[fibermag_type] > fibermag_brightlimit
+        targs = targs[msk]
+        print 'Filtering', msk.sum(),' targets due to fiber bright limit'
+
+    for i, t in enumerate(targs):
         rastr = Angle(t['ra'], 'deg').format('hr', sep=':', precision=3)
         decstr = Angle(t['dec'], 'deg').format('deg', sep=':', precision=3)
         objnm = str(t['objID'])
         mag = '{0:.2f}'.format(t['r'])
-        rank = str(prisatrank if t['r'] < prisecbounday else secsatrank)
+        rank = prisatrank if t['r'] < prisecbounday else secsatrank
+        if outermsk is not None and outermsk[i]:
+            rank += 1
 
-        tabentries.append([rastr, decstr, objnm, rank, 'TARGET', mag])
+
+        tabentries.append([rastr, decstr, objnm, str(rank), 'TARGET', mag])
         catlines.append('\t'.join(tabentries[-1]))
 
     #calibration stars - don't obey outercutrad
@@ -142,3 +195,44 @@ def select_guide_stars(cat, magrng=(14, 15)):
 
 
     return cat[msk]
+
+def parse_cfg_file(fn):
+    from astropy.coordinates import ICRSCoordinates
+    from astropy.io import ascii
+
+    intab = False
+    inhdr = False
+
+    coords = []
+    targets = []
+    ranks = []
+    fields = []
+
+    fi = 0
+    with open(fn) as f:
+        for l in f:
+            if intab:
+                if l.strip()=='':
+                    intab = False
+                else:
+                    fiber, ra, dec, platex, platey, target, rank = [e.strip() for e in l.split('\t')]
+                    coords.append(ICRSCoordinates(ra, dec, unit=('hr', 'deg')))
+                    targets.append(int(float(target)))
+                    ranks.append(int(float(rank)))
+                    fields.append(fi)
+
+
+
+            elif l.startswith('fiber'):
+                hdrline = l
+                inhdr = True
+            elif inhdr and l.startswith('-'):
+                hdrline2 = l
+                inhdr = False
+                intab = True
+                fi += 1
+
+    return np.array(coords), np.array(targets), np.array(ranks), np.array(fields)
+
+
+

@@ -157,6 +157,7 @@ def construct_sdss_query(ra, dec, radius=1, into=None):
     p.modelMag_u as u, p.modelMag_g as g, p.modelMag_r as r,p.modelMag_i as i,p.modelMag_z as z,
     p.modelMagErr_u as u_err, p.modelMagErr_g as g_err, p.modelMagErr_r as r_err,p.modelMagErr_i as i_err,p.modelMagErr_z as z_err,
     p.psfMag_u as psf_u, p.psfMag_g as psf_g, p.psfMag_r as psf_r, p.psfMag_i as psf_i, p.psfMag_z as psf_z,
+    p.fibermag_r, p.fiber2mag_r,
     p.extinction_u as Au, p.extinction_g as Ag, p.extinction_r as Ar, p.extinction_i as Ai, p.extinction_z as Az,
     ISNULL(s.z, -1) as spec_z, ISNULL(s.zErr, -1) as spec_z_err, ISNULL(s.zWarning, -1) as spec_z_warn, s.class as spec_class, s.subclass as spec_subclass
 
@@ -360,6 +361,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         cat : table
             The SDSS catalog with the selection applied
     """
+    from astropy.table import Column
     from math import cos, radians
 
     cat = host.get_sdss_catalog()
@@ -377,17 +379,22 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
 
     cdec = cos(radians(host.dec))
 
-    dra = cat['ra'] - host.ra
-    ddec = cat['dec'] - host.dec
-    rhost = ((dra * cdec) ** 2 + ddec ** 2) ** 0.5
+
+    if 'rhost' not in cat.colnames:
+        dra = cat['ra'] - host.ra
+        ddec = cat['dec'] - host.dec
+        rhost = ((dra * cdec) ** 2 + ddec ** 2) ** 0.5
+        cat.add_column(Column(name='rhost', data=rhost))
 
     if outercutrad is not None:
         if outercutrad < 0:  # arcmin
             outercutraddeg = -outercutrad / 60.
         else:  # kpc
             outercutraddeg = np.degrees(outercutrad / (1000 * host.distmpc))
+    else:
+        outercutraddeg = cat['rhost'].max()
 
-        outercutrad = rhost < outercutraddeg
+        outercutrad = cat['rhost'] < outercutraddeg
 
         msk = msk & outercutrad
 
@@ -397,7 +404,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         else:  # kpc
             innercutraddeg = np.degrees(innercutrad / (1000 * host.distmpc))
 
-        innercutrad = rhost > innercutraddeg
+        innercutrad = cat['rhost'] > innercutraddeg
 
         msk = msk & innercutrad
 
@@ -450,6 +457,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
                 matchfuture=future)[0]
 
             msk = msk & ~gamamatchmsk
+            print 'Removing', np.sum(gamamatchmsk),'GAMA objects'
 
 
 
