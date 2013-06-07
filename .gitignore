@@ -2,3 +2,4 @@
 *.fits
 catalogs/*
 hydra_targets/*
+.DS_Store

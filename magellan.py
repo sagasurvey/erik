@@ -9,7 +9,7 @@ These functions are for the "Distant local groups" project Magellan-related work
 How to design IMACS masks:
 1. Generate the target list using `build_imacs_targetlists`.  This will put a
    catalog and initial .obs file in the ``imacs_targets`` directory.
-2. Open 2 terminals, and in both, cd into ``imacs_targets`` and do ``../source imacs.envars``
+2. Open 2 terminals, and in both, cd into ``imacs_targets`` and do ``source ../imacs.envars``
 3. Do "intgui -k <field>_ini.obs" in one of the terminals
 4. Change the filename and title boxes to <field>_1
 5. Use the GUI to pick the field location/rotation to optimize guide stars
@@ -90,7 +90,7 @@ OBJFILE  {catfile}
 
 
 def build_imacs_targeting_files(host, observername, date='2013-02-15',
-                                onlygals=True, refmagrange={'R': (17, 19)},
+                                onlygals=True, refmagrange={'r': (17, 19)},
                                 overwrite=False):
     """
     Generates the target catalog and initial observation file for IMACS
@@ -172,6 +172,65 @@ def build_imacs_targeting_files(host, observername, date='2013-02-15',
     with open(fnobs, 'w') as f:
         f.write(obsfile)
     print 'Wrote obs file to', fnobs
+
+def reprocess_catalog_for_prev_mmt_obs(fncat, hectocfg, fncatnew, rankcutoff=2, tolarcsec=1, magrng=None, hectofields='all'):
+    """
+    This removes everything from the mmt catalog in a given set of fields and magrngs
+    """
+    from scipy.spatial import cKDTree
+    from mmthecto import parse_cfg_file
+
+    hcoords, htargets, hranks, hfields = parse_cfg_file(hectocfg)
+
+    cmsk = (hranks > rankcutoff)
+    if hectofields != 'all':
+        fimsk = np.zeros_like(cmsk)
+        for fi in hectofields:
+            fimsk = fimsk | (hfields == fi)
+        print 'Removing', np.sum(~fimsk),'of', len(fimsk), 'objects due to not being in the requested fields'
+        cmsk = cmsk & fimsk
+
+    hras = np.array([c.ra.degrees for c in hcoords[cmsk]])
+    hdecs = np.array([c.dec.degrees for c in hcoords[cmsk]])
+
+    toldeg = tolarcsec / 3600.
+
+    kdt = cKDTree(np.array([hras, hdecs], copy=False).T)
+
+    newcatlines = []
+
+    if magrng is None:
+        check_mag = lambda mag: True
+    else:
+        magrng = min(magrng), max(magrng)
+        check_mag = lambda mag: magrng[0] < mag < magrng[1]
+
+
+    remras = []
+    remdecs = []
+    nremoved = 0
+    nremaining = 0
+    with open(fncat) as fr:
+        for l in fr:
+            if l.startswith('@'):
+                nm, ra, dec, mag = l[1:-1].split()
+                d, i = kdt.query([float(ra), float(dec)])
+                if (d < toldeg) and check_mag(float(mag)):
+                    remras.append(float(ra))
+                    remdecs.append(float(dec))
+                    nremoved += 1
+                    continue  # means don't add to newcatlines
+                else:
+                    nremaining += 1
+
+            newcatlines.append(l)
+
+    print 'Removed', nremoved, 'from magellan catalog, leaving', nremaining,'\nwriting new catalog to', fncatnew
+    with open(fncatnew, 'w') as f:
+        for l in newcatlines:
+            f.write(l)
+
+    return np.array(remras), np.array(remdecs)
 
 
 def _get_smf_entries(fn, inclholes=False):

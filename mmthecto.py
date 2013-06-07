@@ -65,7 +65,7 @@ def make_catalog(host, fnout=None, targetfaintlim=(21.,22.), targetoutercutrad=3
             outercutraddeg = -targetoutercutrad / 60.
         else:  # kpc
             outercutraddeg = np.degrees(targetoutercutrad / (1000 * host.distmpc))
-        outermsk = targs['rhost'] > outercutraddeg
+        outermsk = targs['rhost'] > outercutraddeg #just used for counting purposes
     else:
         targs = targeting.select_targets(host, faintlimit=seclimit, outercutrad=targetoutercutrad, removegalsathighz=removegalsathighz, removespecstars=removespecstars, inclspecqsos=inclspecqsos)
         outermsk = None
@@ -102,13 +102,16 @@ def make_catalog(host, fnout=None, targetfaintlim=(21.,22.), targetoutercutrad=3
         targs = targs[msk]
         print 'Filtering', msk.sum(),' targets due to fiber bright limit'
 
+    #entries for the actual targets
     for i, t in enumerate(targs):
         rastr = Angle(t['ra'], 'deg').format('hr', sep=':', precision=3)
         decstr = Angle(t['dec'], 'deg').format('deg', sep=':', precision=3)
         objnm = str(t['objID'])
         mag = '{0:.2f}'.format(t['r'])
         rank = prisatrank if t['r'] < prisecbounday else secsatrank
-        if outermsk is not None and outermsk[i]:
+        #if outermsk is not None and outermsk[i]:
+        #    rank += 1
+        if t['rhost'] > outercutraddeg:
             rank += 1
 
 
@@ -197,6 +200,9 @@ def select_guide_stars(cat, magrng=(14, 15)):
     return cat[msk]
 
 def parse_cfg_file(fn):
+    """
+    returns coords, targets, ranks, fields
+    """
     from astropy.coordinates import ICRSCoordinates
     from astropy.io import ascii
 

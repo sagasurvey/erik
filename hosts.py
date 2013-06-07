@@ -305,9 +305,9 @@ class NSAHost(object):
             pU, pB, pV, pR, pI = sdss_to_UBVRI(*[tab['psf_' + b] for b in 'ugriz'])
 
             for b in 'UBVRI':
-                tab.add_column(Column(b, locals()[b]))
+                tab.add_column(Column(name=b, data=locals()[b]))
             for b in 'UBVRI':
-                tab.add_column(Column('psf_' + b, locals()['p' + b]))
+                tab.add_column(Column(name='psf_' + b, data=locals()['p' + b]))
 
 
         return self._cached_sdss
