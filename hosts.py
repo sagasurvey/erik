@@ -84,8 +84,6 @@ class NSAHost(object):
         self.l = galcoord.l.degrees
         self.b = galcoord.b.degrees
 
-
-
         for i, band in enumerate('FNugriz'):
             setattr(self, band, obj['ABSMAG'][i])
 
@@ -105,6 +103,8 @@ class NSAHost(object):
                 '{0}_usnob.dat'.format(self.name))
         else:
             self.fnusnob = fnusnob
+
+        self.sdssquerymagcut = None
 
     @property
     def distmpc(self):
@@ -174,7 +174,7 @@ class NSAHost(object):
 
         return np.radians(angle) * 1000 * self.distmpc
 
-    def sdss_environs_query(self, dl=False):
+    def sdss_environs_query(self, dl=False, usecas=False, magcut=None):
         """
         Constructs an SDSS query to get the SDSS objects around this
         host and possibly downloads the catalog.
@@ -185,9 +185,12 @@ class NSAHost(object):
 
         Parameters
         ----------
-        usecas : bool
+        dl : bool
             If True, download the catalog to `fnsdss`.  Otherwise, just
             return the query.
+        usecas : bool
+            If True, includes an `INTO` in the SQL for use with casjobs.
+            Ignored if `dl` is True
 
         Returns
         -------
@@ -204,9 +207,11 @@ class NSAHost(object):
         from targeting import construct_sdss_query, download_sdss_query
 
         raddeg = self.environsarcmin / 60.
+        usecas = False if dl else usecas
 
         query = construct_sdss_query(self.ra, self.dec, raddeg,
-            into=None if dl else ('NSA{0}_environs'.format(self.nsaid)))
+            into=('{0}_environs'.format(self.name)) if usecas else None,
+            magcut=self.sdssquerymagcut)
 
         if dl:
             if exists(self.fnsdss):
@@ -378,7 +383,7 @@ def download_with_progress_updates(u, fw, nreports=100, msg=None, outstream=sys.
         fw.write(end)
 
 
-def load_all_hosts(hostsfile='hosts.dat', existinghosts='globals', usedlgname=False):
+def load_all_hosts(hostsfile='hosts.dat', existinghosts='globals', usedlgname=False, keyonname=False):
     """
     Loads all the hosts in the specified host file and resturns them
     as a dictionary.
@@ -406,7 +411,12 @@ def load_all_hosts(hostsfile='hosts.dat', existinghosts='globals', usedlgname=Fa
                 i += 1
             nsanum, ra, dec, z = l.split()
             nsanum = int(nsanum)
-            d['h' + str(i)] = NSAHost(nsanum, 'DLG' + str(i) if usedlgname else None)
+            hnm = 'h' + str(i)
+            d[hnm] = NSAHost(nsanum, 'DLG' + str(i) if usedlgname else None)
+            if keyonname:
+                h = d[hnm]
+                d[h.name] = h
+                del d[hnm]
             i += 1
 
     return d

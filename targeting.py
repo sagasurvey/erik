@@ -124,7 +124,7 @@ def get_gama(fn=None):
     return tab
 
 
-def construct_sdss_query(ra, dec, radius=1, into=None):
+def construct_sdss_query(ra, dec, radius=1, into=None, magcut=None):
     """
     Generates the query to send to the SDSS to get the full SDSS catalog around
     a target.
@@ -142,42 +142,57 @@ def construct_sdss_query(ra, dec, radius=1, into=None):
         this with CasJobs, or None to have no "into" in the SQL. This also
         adjust other parts of the query a little to work with CasJobs instead
         of the direct query.
+    magcut : 2-tuple or None
+        if not None, adds a magnitude cutoff.  Should be a 2-tuple
+        ('magname', faintlimit). Ignored if None.
 
     Returns
     -------
     query : str
         The SQL query to send to the SDSS skyserver
 
+
     """
     from textwrap import dedent
 
     query_template = dedent("""
     SELECT  p.objId  as objID,
-    p.ra, p.dec, p.type, p.flags, p.specObjID, p. fracDeV_r,
+    p.ra, p.dec, p.type, p.flags, p.specObjID, dbo.fPhotoTypeN(p.type) as phot_sg,
     p.modelMag_u as u, p.modelMag_g as g, p.modelMag_r as r,p.modelMag_i as i,p.modelMag_z as z,
     p.modelMagErr_u as u_err, p.modelMagErr_g as g_err, p.modelMagErr_r as r_err,p.modelMagErr_i as i_err,p.modelMagErr_z as z_err,
     p.psfMag_u as psf_u, p.psfMag_g as psf_g, p.psfMag_r as psf_r, p.psfMag_i as psf_i, p.psfMag_z as psf_z,
     p.fibermag_r, p.fiber2mag_r,
+    p.petroMag_r + 2.5*log10(2*PI()*p.petroR50_r*p.petroR50_r) as sb_petro_r,
+    p.expMag_r, p.expMag_r + 2.5*log10(2*PI()*p.expRad_r*p.expRad_r + 1e-20) as sb_exp_r,
+    p.deVMag_r, p.deVMag_r + 2.5*log10(2*PI()*p.deVRad_r*p.deVRad_r + 1e-20) as sb_deV_r,
+    p.lnLExp_r, p.lnLDeV_r, p.lnLStar_r,
     p.extinction_u as Au, p.extinction_g as Ag, p.extinction_r as Ar, p.extinction_i as Ai, p.extinction_z as Az,
     ISNULL(s.z, -1) as spec_z, ISNULL(s.zErr, -1) as spec_z_err, ISNULL(s.zWarning, -1) as spec_z_warn, s.class as spec_class, s.subclass as spec_subclass
+
 
     {into}
     FROM {funcprefix}fGetNearbyObjEq({ra}, {dec}, {radarcmin}) n, PhotoPrimary p
     LEFT JOIN SpecObj s ON p.specObjID = s.specObjID
-    WHERE n.objID = p.objID
+    WHERE n.objID = p.objID{magcutwhere}
     """)
     #if using casjobs, functions need 'dbo' in front of them for some reason
     if into is None:
         intostr = ''
         funcprefix = 'dbo.'
     else:
-        intostr = 'INTO mydb.' + into
+        intostr = 'INTO MyDB.' + into
         funcprefix = ''
 
-    intostr = '' if into is None else ('INTO mydb.' + into)
+    intostr = '' if into is None else ('INTO MyDB.' + into)
+
+    if magcut is None:
+        magcutwhere = ''
+    else:
+        magcutwhere = ' and p.{0} < {1}'.format(*magcut)
 
     return query_template.format(ra=float(ra), dec=float(dec),
-        radarcmin=radius * 60., into=intostr, funcprefix=funcprefix)
+        radarcmin=radius * 60., into=intostr, funcprefix=funcprefix,
+        magcutwhere=magcutwhere)
 
 
 def construct_usnob_query(ra, dec, radius=1, verbosity=1, votable=False, baseurl=USNOB_URL):
@@ -277,6 +292,7 @@ def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
 
     try:
         q = urllib2.urlopen(url)
+        print 'grr',url
         try:
             #first read the initial two lines to check for errors
             firstline = q.readline()
@@ -322,7 +338,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
 
     Parameters
     ----------
-    host : NSAHost
+    hostorcat : NSAHost
         The host object to select targets for
     band : str
         The name of the photometric band to use for magnitude cuts
@@ -394,9 +410,9 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     else:
         outercutraddeg = cat['rhost'].max()
 
-        outercutrad = cat['rhost'] < outercutraddeg
+    outercutrad = cat['rhost'] < outercutraddeg
 
-        msk = msk & outercutrad
+    msk = msk & outercutrad
 
     if innercutrad is not None:
         if innercutrad < 0:  # arcmin
