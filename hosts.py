@@ -161,7 +161,7 @@ class NSAHost(object):
 
     def physical_to_projected(self, distkpc):
         """
-        Returns the angular distance (in degrees) given a projected physical distance (in kpc)
+        Returns the angular distance (in arcmin) given a projected physical distance (in kpc)
         """
         return np.degrees(distkpc / (1000 * self.distmpc)) * 60
 
@@ -191,6 +191,9 @@ class NSAHost(object):
         usecas : bool
             If True, includes an `INTO` in the SQL for use with casjobs.
             Ignored if `dl` is True
+        magcut : float or None
+            `magcut` as accepted by `targeting.construct_sdss_query` or
+            None to use `self.sdssquerymagcut`
 
         Returns
         -------
@@ -208,10 +211,11 @@ class NSAHost(object):
 
         raddeg = self.environsarcmin / 60.
         usecas = False if dl else usecas
+        magcut = self.sdssquerymagcut if magcut is None else magcut
 
         query = construct_sdss_query(self.ra, self.dec, raddeg,
             into=('{0}_environs'.format(self.name)) if usecas else None,
-            magcut=self.sdssquerymagcut)
+            magcut=magcut)
 
         if dl:
             if exists(self.fnsdss):

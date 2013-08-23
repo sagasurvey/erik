@@ -1,7 +1,7 @@
 from __future__ import division
 
 """
-These functions are for the "Distant local groups" project WIYN-related work.
+These functions are for the SAGA project's WIYN/HYDRA-related work.
 
 How to design HYDRA configurations:
 

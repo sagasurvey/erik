@@ -290,7 +290,7 @@ def imagelist_imacs_targets(smffn, n=100):
     return targeting.sampled_imagelist(ras, decs, n, nms)
 
 
-def load_ricardo_rvs_and_match(fn='rv_ricardo_jul32013.dat', fields=None, relv=False):
+def load_ricardo_rvs_and_match(fn='rv_ricardo_jul32013.dat', fields=None, vtouse='VREL'):
     from os import path
     from astropy.io import ascii
 
@@ -307,6 +307,7 @@ def load_ricardo_rvs_and_match(fn='rv_ricardo_jul32013.dat', fields=None, relv=F
     decs = []
     nms = []
     fns = []
+    specclass = []
 
     for elem in drv:
         fi = '_'.join(elem['FILE'].split('_')[:-2])
@@ -315,15 +316,16 @@ def load_ricardo_rvs_and_match(fn='rv_ricardo_jul32013.dat', fields=None, relv=F
 
         idx = int(elem['FILE'].split('_')[-2]) - 1
 
-        rvs.append(elem['VREL'] if relv else elem['VHELIO'])
+        rvs.append(elem[vtouse])
         rverrs.append(elem['VERR'])
         fns.append(elem['FILE'])
+        specclass.append(elem['CLASS'])
 
         nms.append(fis[fi][0][idx])
         ras.append(fis[fi][1][idx])
         decs.append(fis[fi][2][idx])
 
-    return dict([(enm, np.array(locals()[enm])) for enm in 'nms,ras,decs,rvs,rverrs,fns'.split(',')])
+    return dict([(enm, np.array(locals()[enm])) for enm in 'nms,ras,decs,rvs,rverrs,fns,specclass'.split(',')])
 
 
 
