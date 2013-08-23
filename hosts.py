@@ -63,15 +63,18 @@ class NSAHost(object):
 
         self.nsaid = nsaid  # The NSA ID #
 
+        nsaname = 'NSA{0}'.format(self.nsaid)
         if name is None:
-            name = 'NSA{0}'.format(self.nsaid)
-
-        if isinstance(name, basestring):
-            self.name = name
+            name = nsaname
             self.altnames = []
+        elif isinstance(name, basestring):
+            self.name = name
+            self.altnames = [nsaname]
         else:
             self.name = name[0]
             self.altnames = name[1:]
+            if nsaname not in self.altnames:
+                self.altnames.append(nsaname)
 
         nsa = get_nsa()
 
@@ -315,10 +318,25 @@ class NSAHost(object):
             The SDSS catalog
         """
         if getattr(self, '_cached_sdss', None) is None:
+            from os.path import exists, join
             from astropy.io import ascii
             from astropy.table import Column
 
-            self._cached_sdss = tab = ascii.read(self.fnsdss, delimiter=',')
+            if exists(self.fnsdss):
+                fn = self.fnsdss
+            else:
+                nms = self.altnames[:]
+                nms.insert(0, self.name)
+                for nm in nms:
+                    fn = join('catalogs', nm + '_sdss.dat')
+                    if exists(fn):
+                        print 'Could not find file "{0}" but did find "{1}" so using that.'.format(self.fnsdss, fn)
+                        break
+                else:
+                    #didn't find one
+                    raise IOError('Could not find file ' + self.fnsdss)
+
+            self._cached_sdss = tab = ascii.read(fn, delimiter=',')
 
             #add UBVRI converted from SDSS mags
             U, B, V, R, I = sdss_to_UBVRI(*[tab[b] for b in 'ugriz'])
