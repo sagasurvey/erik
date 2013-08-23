@@ -328,11 +328,14 @@ def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
     finally:
         fw.close()
 
+# the color cuts specified in the BOSSANOVA proposal
+bossanova_color_cuts = {'g-r': (None, 1.3), 'r-i': (None, 0.7)}
 
 def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     galvsallcutoff=20, inclspecqsos=False, removespecstars=True,
     removegalsathighz=True, removegama='now', photflags=True,
-    outercutrad=250, innercutrad=20, randomize=True):
+    outercutrad=250, innercutrad=20, colorcuts={},
+    randomize=True):
     """
     Selects targets from the SDSS catalog.
 
@@ -364,11 +367,15 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         Apply the extended object recommended photometry flags (see
         http://www.sdss3.org/dr9/tutorials/flags.php)
     outercutrad : number or None
-        A separation angle in kpc beyond which to not select targets
+        A separation angle in *kpc* beyond which to not select targets
         (or negative for arcmin), or None to not do this cut
     innercutrad : number or None
-        A separation angle in kpc inside which to not select targets
+        A separation angle in *kpc* inside which to not select targets
         (or negative for arcmin), or None to not cut
+    colorcuts: dict of 2-tuples
+        A dictionary mapping SDSS colors to the range of colors to accept as
+        ``(bluest, reddest)``. E.g., {'g-r': (-1, 2)}.  Default is to do no
+        color cuts.
     randomize : bool
         Randomize the order of the catalog and the very end
 
@@ -387,11 +394,30 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     #raw magnitude cuts
     magcuts = (brightlimit < mag) & (mag < faintlimit)
 
+    #color cuts if any are present
+    colorcutmsk = np.ones_like(magcuts)  # start by accepting everything
+    if colorcuts:
+        for k, v in colorcuts.iteritems():
+            c1, c2 = k.split('-')
+            color = cat[c1] - cat[c2]
+
+            bluec, redc = v
+            if bluec is None:
+                bluec = -float('inf')
+            if redc is None:
+                redc = float('inf')
+
+            assert bluec < redc, 'blue cut larger than red cut!: ' + str(v)
+
+            #this now adds the cuts to the mask for this color
+            colorcutmsk = colorcutmsk & (bluec < color) & (color < redc)
+
+
     #type==3 is an imaging-classified galaxy - but only do it if you're brighter than galvsallcutoff
     nonphotgal = (cat['type'] == 3) | (mag > galvsallcutoff)
 
     #base selection is based on the above
-    msk = magcuts & nonphotgal
+    msk = magcuts & colorcutmsk & nonphotgal
 
     cdec = cos(radians(host.dec))
 
