@@ -343,6 +343,12 @@ class NSAHost(object):
         webbrowser.open(urltempl.format(self.nsaid))
 
 
+    def __repr__(self):
+        clsname = super(NSAHost, self).__repr__().split()[0][1:]  # strips the "<" at the start
+        altnamepart = '' if len(self.altnames) == 0 else (' AKA: ' + str(self.altnames))
+        return "<{clsname} object w/ name '{name}'{altnamepart}>".format(clsname=clsname, name=self.name, altnamepart=altnamepart)
+
+
 def download_with_progress_updates(u, fw, nreports=100, msg=None, outstream=sys.stdout):
     """
     Download a file and give progress updates on the download.
@@ -487,6 +493,8 @@ def get_saga_hosts():
     hostsd['sw'] = NSAHost(155005, ['Luke Skywalker', 'Star Wars', 'NGC895'])
 
     return hostsd
+
+
 
 
 #this adds the hosts from the get_saga_hosts function to the module's namespace
