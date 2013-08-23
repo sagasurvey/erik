@@ -17,8 +17,10 @@ class NSAHost(object):
     ----------
     nsaid : int
         The NSA ID# of this host
-    name : str or None
-        The name of this host (or None to go with "NSA###")
+    name : str or sequence of strings or None
+        The name of this host (or None to go with "NSA###").  If a list,
+        the first will be the `name` attribute, while all others will be
+        in `altname`
     environsradius : float
         The distance to consider as the edge of the "environs" - if positive,
         this will be taken as arcmin, otherwise -kpc
@@ -60,7 +62,16 @@ class NSAHost(object):
         from astropy.coordinates import ICRSCoordinates
 
         self.nsaid = nsaid  # The NSA ID #
-        self.name = 'NSA{0}'.format(self.nsaid) if name is None else name
+
+        if name is None:
+            name = 'NSA{0}'.format(self.nsaid)
+
+        if isinstance(name, basestring):
+            self.name = name
+            self.altnames = []
+        else:
+            self.name = name[0]
+            self.altnames = name[1:]
 
         nsa = get_nsa()
 
@@ -447,21 +458,36 @@ def sdss_to_UBVRI(u, g, r, i, z):
     return U, B, V, R, I
 
 
-h1 = NSAHost(76316, 'DLG1')
-h2 = NSAHost(46892, 'DLG2')
-h3 = NSAHost(133120, 'DLG3')
-h4 = NSAHost(156881, 'DLG4')
-h5 = NSAHost(159789, 'DLG5')
-h6 = NSAHost(140594, 'DLG6')
+def get_old_hosts():
+    """
+    This loads hosts with the old name convention of "DLG#"
+    """
+    hostsd = {}
 
-hostvarnms = []
-for k, v in locals().items():
-    if k.startswith('h') and isinstance(v, NSAHost):
-        hostvarnms.append(k)
-hostvarnms.sort()
+    hostsd['h1'] = NSAHost(76316, 'DLG1')
+    hostsd['h2'] = NSAHost(46892, 'DLG2')
+    hostsd['h3'] = NSAHost(133120, 'DLG3')
+    hostsd['h4'] = NSAHost(156881, 'DLG4')
+    hostsd['h5'] = NSAHost(159789, 'DLG5')
+    hostsd['h6'] = NSAHost(140594, 'DLG6')
 
-hosts = []
-for k in hostvarnms:
-    hosts.append(locals()[k])
+    return hostsd
 
-del k, v, hostvarnms   # clean up namespace
+
+def get_saga_hosts():
+    """
+    Returns a dictionary with the "official" SAGA names
+    """
+    hostsd = {}
+
+    #note that the first name here is for the *host*, not the system, system is the second
+    hostsd['odyssey'] = NSAHost(147100, ['Odysseus', 'Odyssey', 'NGC6181'])
+    hostsd['iliad'] = NSAHost(150238, ['Achilles', 'Iliad', 'NGC7393'])
+    hostsd['lortr'] = NSAHost(155005, ['Frodo Baggins', 'Lord of the Rings', 'NGC895'])
+    hostsd['sw'] = NSAHost(155005, ['Luke Skywalker', 'Star Wars', 'NGC895'])
+
+    return hostsd
+
+
+#this adds the hosts from the get_saga_hosts function to the module's namespace
+locals().update(get_saga_hosts())
