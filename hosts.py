@@ -109,14 +109,20 @@ class NSAHost(object):
         if fnsdss is None:
             self.fnsdss = path.join('catalogs',
                 '{0}_sdss.dat'.format(self.name))
+            self.altfnsdss = [path.join('catalogs',
+                '{0}_sdss.dat'.format(nm)) for nm in self.altnames]
         else:
             self.fnsdss = fnsdss
+            self.altfnsdss = []
 
         if fnusnob is None:
             self.fnusnob = path.join('catalogs',
                 '{0}_usnob.dat'.format(self.name))
+            self.altfnusnob = [path.join('catalogs',
+                '{0}_usnob.dat'.format(nm)) for nm in self.altnames]
         else:
             self.fnusnob = fnusnob
+            self.altfnusnob = []
 
         self.sdssquerymagcut = None
 
@@ -289,9 +295,21 @@ class NSAHost(object):
             The USNO-B catalog
         """
         if getattr(self, '_cached_usnob', None) is None:
+            from os.path import exists
             from astropy.io import ascii
 
-            with open(self.fnusnob) as f:
+            if exists(self.fnusnob):
+                fn = self.fnusnob
+            else:
+                for fn in self.altfnusnob:
+                    if exists(fn):
+                        print 'Could not find file "{0}" but did find "{1}" so using that.'.format(self.fnusnob, fn)
+                        break
+                else:
+                    #didn't find one
+                    raise IOError('Could not find file {0} nor any of {1}'.format(self.altfnusnob, self.altfnusnob))
+
+            with open(fn) as f:
                 for l in f:
                     if l.startswith('#1') and 'id' in l:
                         colnames = [nm.strip() for nm in l.replace('#1', '').split('|') if nm.strip() != '']
@@ -303,7 +321,7 @@ class NSAHost(object):
                 else:
                     raise ValueError('USNO-B catalog does not have header - wrong format?')
 
-            self._cached_usnob = ascii.read(self.fnusnob, names=colnames, guess=False)
+            self._cached_usnob = ascii.read(fn, names=colnames, guess=False)
 
         return self._cached_usnob
 
@@ -318,23 +336,20 @@ class NSAHost(object):
             The SDSS catalog
         """
         if getattr(self, '_cached_sdss', None) is None:
-            from os.path import exists, join
+            from os.path import exists
             from astropy.io import ascii
             from astropy.table import Column
 
             if exists(self.fnsdss):
                 fn = self.fnsdss
             else:
-                nms = self.altnames[:]
-                nms.insert(0, self.name)
-                for nm in nms:
-                    fn = join('catalogs', nm + '_sdss.dat')
+                for fn in self.altfnsdss:
                     if exists(fn):
                         print 'Could not find file "{0}" but did find "{1}" so using that.'.format(self.fnsdss, fn)
                         break
                 else:
                     #didn't find one
-                    raise IOError('Could not find file ' + self.fnsdss)
+                    raise IOError('Could not find file {0} nor any of {1}'.format(self.fnsdss, self.altfnsdss))
 
             self._cached_sdss = tab = ascii.read(fn, delimiter=',')
 
@@ -347,7 +362,6 @@ class NSAHost(object):
             for b in 'UBVRI':
                 tab.add_column(Column(name='psf_' + b, data=locals()['p' + b]))
 
-
         return self._cached_sdss
 
     def open_on_nsasite(self):
@@ -359,7 +373,6 @@ class NSAHost(object):
         urltempl = 'http://www.nsatlas.org/getAtlas.html?search=nsaid&nsaID={0}&submit_form=Submit'
 
         webbrowser.open(urltempl.format(self.nsaid))
-
 
     def __repr__(self):
         clsname = super(NSAHost, self).__repr__().split()[0][1:]  # strips the "<" at the start

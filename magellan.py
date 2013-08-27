@@ -233,7 +233,7 @@ def reprocess_catalog_for_prev_mmt_obs(fncat, hectocfg, fncatnew, rankcutoff=2, 
     return np.array(remras), np.array(remdecs)
 
 
-def _get_smf_entries(fn, inclholes=False):
+def get_smf_entries(fn, inclholes=False):
     from astropy.coordinates import Angle
     from astropy.units import hour, degree
 
@@ -271,7 +271,7 @@ def plot_imacs_masks(host, clf=True, save=False):
 
     for fn in smfs:
         msknum = int(fn.split('_')[-1].split('.')[0])
-        nmi, rai, deci = _get_smf_entries(fn)
+        nmi, rai, deci = get_smf_entries(fn)
 
         plt.plot(rai, deci, '.', ms=5, alpha=.8, label=str(msknum))
 
@@ -286,7 +286,7 @@ def plot_imacs_masks(host, clf=True, save=False):
 def imagelist_imacs_targets(smffn, n=100):
     import targeting
 
-    nms, ras, decs = _get_smf_entries(smffn)
+    nms, ras, decs = get_smf_entries(smffn)
     return targeting.sampled_imagelist(ras, decs, n, nms)
 
 
@@ -299,7 +299,7 @@ def load_ricardo_rvs_and_match(fn='rv_ricardo_jul32013.dat', fields=None, vtouse
 
     fis = {}
     for fi in ufis:
-        fis[fi] = _get_smf_entries(path.join('imacs_targets', fi + '.SMF'), inclholes=True)
+        fis[fi] = get_smf_entries(path.join('imacs_targets', fi + '.SMF'), inclholes=True)
 
     rvs = []
     rverrs = []

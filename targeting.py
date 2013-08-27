@@ -13,9 +13,9 @@ from matplotlib import pyplot as plt
 NSA_VERSION = '0.1.2'  # used to find the download location/file name
 NSAFILENAME = 'nsa_v{0}.fits'.format(NSA_VERSION.replace('.', '_'))
 
-SDSS_SQL_URL = 'http://skyserver.sdss3.org/dr9/en/tools/search/x_sql.asp'
-SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss3.org/dr9/en/tools/chart/list.asp'
-SDSS_FINDCHART_URL = 'http://skyservice.pha.jhu.edu/DR9/ImgCutout/getjpeg.aspx'
+SDSS_SQL_URL = 'http://skyserver.sdss3.org/dr10/en/tools/search/sql.aspx'
+SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss3.org/dr10/en/tools/chart/listinfo.aspx'
+SDSS_FINDCHART_URL = 'http://skyservice.pha.jhu.edu/DR10/ImgCutout/getjpeg.aspx'
 
 USNOB_URL = 'http://www.nofs.navy.mil/cgi-bin/vo_cone.cgi'
 

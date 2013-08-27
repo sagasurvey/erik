@@ -15,9 +15,11 @@ For each host:
    pass the result into `construct_master_catalog`.
 3. Create the first whydra input (".ast") file by calling
    `generate_ast_file` with the master catalog from #2.
-4. Copy the .ast file from `hydra_targets` to the `whydra` directory (on dept Linux machines)
+4. Copy the .ast file from `hydra_targets` to the `hydra_simulator/whydra` directory
+   (on Yale astro dept Linux machines)
 5. Run whydra on this ast file (on dept Linux machines), producing a .hydra
-   file with the same name.  Not that you may want to use the `do_whydra` script.
+   file with the same name.  Note that you may want to use the `do_whydra`
+   script - copy it to the `whydra` directory and use it to automate running whydra.
 6. copy the .hydra file (on dept Linux machines) to the `hydra_targets` directory
 7. (optional) Use `imagelist_selected_fops` on the .hydra file to check if some
    of the FOP star are galaxies or double stars or something. if so, comment them
@@ -149,6 +151,12 @@ def construct_master_catalog(host, fnout=None, targetcat=None, fopcat=None,
     fopcat : str or None
         The catalog of FOP stars or None to use the default options to
         generate one.
+    skyradec : 2xN array or None
+        (ra, dec) for locations of sky fibers or if None, will use
+        `select_sky_positions` to find good sky fiber locations.
+    faintlimit : float or None
+        The faint-end cutoff for r-band magnitudes in the target catalog,
+        or None to have no cutoff
     """
     import os
     from targeting import usno_vs_sdss_offset, select_targets
@@ -161,10 +169,14 @@ def construct_master_catalog(host, fnout=None, targetcat=None, fopcat=None,
             targetcat = select_targets(host)
         else:
             targetcat = select_targets(host, faintlimit=faintlimit)
-        print len(targetcat), 'objects'
+    elif faintlimit is not None:
+        #do the faintlimit cut manuall if not using `select_targets`
+        targetcat = targetcat[targetcat['r'] < faintlimit]
+
+    print len(targetcat), 'objects'
     if fopcat is None:
         fopcat = select_fops(host)
-        print len(fopcat), 'FOPS'
+    print len(fopcat), 'FOPS'
     if skyradec is None:
         skyradec = select_sky_positions(host)
 
@@ -377,7 +389,8 @@ def generate_ast_file(mastercatfn, lst, obsepoch=None, whydrafiles=None,
         A lower magnitude to cut off at if only bright objects are desired in
         this ast file.
     scpname : str
-        The name of the computer to use in the scp commands displayed at the end.
+        The name of the computer to use in the scp commands displayed at the
+        end.
     scpusername : str
         The username for the directories in the scp commands displayed at the end.
     """
@@ -480,15 +493,38 @@ def imagelist_selected_fops(hydrafile, copytoclipboard=True, openurl=True):
         return sampled_imagelist(ras, decs, len(ras), names=names, copytoclipboard=copytoclipboard, url=None)
 
 
-def imagelist_all_fops(mastercatfn, copytoclipboard=True, openurl=True):
+def imagelist_from_master(mastercatfn, objtype, nobjs=None, copytoclipboard=True, openurl=True):
     """
-    Shows all the fops from the master list
+    Shows objects from a WIYN master catalog in the imagelist tool.
+
+    Parameters
+    ----------
+    mastercatfn : str
+        The file name of the master catalog
+    objtype : str
+        The type of object to show.  Valid options are 'targets', 'fop', or 'sky'.
+    nobjs : int or None
+        The number of objects to show (randomly sampled) or None to show all
+    copytoclipboard : bool
+        If True, the imagelist table is copied to the clipboard
+    openurl : bool
+        If True, the imagelist url is opened in a web browser window
     """
+    from astropy.coordinates import Angle
     from targeting import sampled_imagelist
 
     ras = []
     decs = []
     names = []
+
+    if objtype == 'target':
+        objcode = 'O'
+    elif objtype == 'fop':
+        objcode = 'F'
+    elif objtype == 'sky':
+        objcode = 'S'
+    else:
+        raise ValueError('Invalid objtype ' + str(objtype))
 
     with open(mastercatfn) as f:
         for l in f:
@@ -497,16 +533,21 @@ def imagelist_all_fops(mastercatfn, copytoclipboard=True, openurl=True):
             if l[0].startswith('#') or len(ls) < 5:
                 continue
 
-            if ls[4] == 'F':
-                names.append(ls[1])
-                ras.append(ls[2])
-                decs.append(ls[3])
+            if ls[4] == objcode:
+                #names.append(ls[1])
+                names.append(l[5:26])
+                #ras.append(ls[2])
+                ras.append(Angle(l[26:38], unit='hour').degrees)
+                #decs.append(ls[3])
+                decs.append(Angle(l[39:51], unit='deg').degrees)
+
+    if nobjs is None:
+        nobjs = len(ras)
 
     if openurl:
-        return sampled_imagelist(ras, decs, len(ras), names=names, copytoclipboard=copytoclipboard)
+        return sampled_imagelist(ras, decs, nobjs, names=names, copytoclipboard=copytoclipboard)
     else:
-        return sampled_imagelist(ras, decs, len(ras), names=names, copytoclipboard=copytoclipboard, url=None)
-
+        return sampled_imagelist(ras, decs, nobjs, names=names, copytoclipboard=copytoclipboard, url=None)
 
 
 def generate_wiyn_cache(outfn, infns='hydra_targets/*.hydra'):
@@ -572,3 +613,39 @@ def generate_wiyn_cache(outfn, infns='hydra_targets/*.hydra'):
         with open(outfn, 'w') as fw:
             for l in outlines:
                 fw.write(l)
+
+
+def clean_master_catalog(mastercatfn, invalidnms, outfn=None):
+    """
+    This takes a WIYN master catalog and names of a bunch of invalid objects
+    (e.g. initially selected FOPS that are actually galaxies), and removes
+    them, writing a new catalog
+
+    Parameters
+    ----------
+    mastercatfn : str
+        The input master catalog
+    invalidnms : list of str
+        The names of the invalid objects (must match the second column
+        of the master catalog, case-sensitive)
+    outfn : str or None
+        The name of the output file or None to overwrite the original `mastercatfn`
+    """
+    invalidnms = tuple(invalidnms)
+
+    newlns = []
+    skipped = []
+    with open(mastercatfn) as fr:
+        for l in fr:
+            ls = l.split()
+            if ls[1] in invalidnms:
+                skipped.append(ls[1])
+            else:
+                newlns.append(l)
+
+    if outfn is None:
+        outfn = mastercatfn
+
+    with open(outfn, 'w') as fw:
+        for l in newlns:
+            fw.write(l)
