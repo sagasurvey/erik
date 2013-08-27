@@ -518,10 +518,10 @@ def get_saga_hosts():
     hostsd = {}
 
     #note that the first name here is for the *host*, not the system, system is the second
-    hostsd['odyssey'] = NSAHost(147100, ['Odysseus', 'Odyssey', 'NGC6181'])
-    hostsd['iliad'] = NSAHost(150238, ['Achilles', 'Iliad', 'NGC7393'])
-    hostsd['lortr'] = NSAHost(155005, ['Frodo Baggins', 'Lord of the Rings', 'NGC895'])
-    hostsd['sw'] = NSAHost(155005, ['Luke Skywalker', 'Star Wars', 'NGC895'])
+    hostsd['odyssey'] = NSAHost(147100, ['Odyssey', 'Odysseus', 'NGC6181'])
+    hostsd['iliad'] = NSAHost(150238, ['Iliad', 'Achilles', 'NGC7393'])
+    hostsd['lotr'] = NSAHost(155005, ['LordoftheRings', 'FrodoBaggins',  'NGC895'])
+    hostsd['starwars'] = NSAHost(155005, ['StarWars', 'LukeSkywalker', 'NGC895'])
 
     return hostsd
 

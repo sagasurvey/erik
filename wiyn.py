@@ -129,8 +129,8 @@ def select_sky_positions(host, nsky=250, sdsscat=None, usnocat=None, nearnesslim
     return ras[:nsky], decs[:nsky]
 
 
-def construct_master_catalog(host, fnout=None, targetcat=None, fopcat=None,
-    skyradec=None, faintlimit=None):
+def construct_master_catalog(host, fnout=None, targetcat={}, fopcat=None,
+    skyradec=None, faintlimit=None, fibermaglimit=None):
     """
     This function produces the "master" catalog for each host for WIYN/hydra
     observations. The master catalog contains lines for all the objects/sky/fops
@@ -145,9 +145,9 @@ def construct_master_catalog(host, fnout=None, targetcat=None, fopcat=None,
     fnout : str or None
         The filename to save as the master catalog or None to use a
         default based on the host's name
-    targetcat : str or None
-        The catalog of targets or None to use the default options to
-        generate one.
+    targetcat : str or dict
+        The catalog of targets or a dict to use `targeting.select_targets`
+        to generate one (the dict is used as the kwargs).
     fopcat : str or None
         The catalog of FOP stars or None to use the default options to
         generate one.
@@ -157,21 +157,31 @@ def construct_master_catalog(host, fnout=None, targetcat=None, fopcat=None,
     faintlimit : float or None
         The faint-end cutoff for r-band magnitudes in the target catalog,
         or None to have no cutoff
+    fibermaglimit : float or None
+        The faint-end cutoff for fiber2mag_r in the target catalog,
+        or None to have no cutoff
     """
     import os
+    from collections import Mapping
     from targeting import usno_vs_sdss_offset, select_targets
 
     if fnout is None:
         fnout = os.path.join('hydra_targets', host.name + '.cat')
 
-    if targetcat is None:
-        if faintlimit is None:
-            targetcat = select_targets(host)
-        else:
-            targetcat = select_targets(host, faintlimit=faintlimit)
+    if isinstance(targetcat, Mapping):
+        if faintlimit is not None:
+            if 'faintlimit' in targetcat:
+                raise ValueError('cannot give both faintlimit kwarg and in targetcat dict')
+            targetcat['faintlimit'] = faintlimit
+        targetcat = select_targets(host, **targetcat)
     elif faintlimit is not None:
-        #do the faintlimit cut manuall if not using `select_targets`
+        #do the faintlimit cut manually if not using `select_targets`
         targetcat = targetcat[targetcat['r'] < faintlimit]
+
+    if fibermaglimit is not None:
+        fmsk = targetcat['fiber2mag_r'] < fibermaglimit
+        print 'Fiber mag cut removes', np.sum(~fmsk), 'of', len(fmsk), 'objects'
+        targetcat = targetcat[fmsk]
 
     print len(targetcat), 'objects'
     if fopcat is None:
@@ -382,7 +392,9 @@ def generate_ast_file(mastercatfn, lst, obsepoch=None, whydrafiles=None,
     finame : str or None
         Name of the field. If None, the name is based on the master
         catalog and those with similar names in `whydrafiles` (e.g.
-        if `DLG1_1.ast` exists, this will be `DLG1_2.ast`)
+        if `DLG1_1.ast` exists, this will be `DLG1_2.ast`).  If there is
+        an '%i' in this string, it will be replaced with the next in the
+        sequence based on `whydrafiles`.
     outdir : str
         The directory to save `finame` in (and look for default file names in)
     faintmagcut : float or None
@@ -412,6 +424,8 @@ def generate_ast_file(mastercatfn, lst, obsepoch=None, whydrafiles=None,
 
     if finame is None:
         finame = os.path.split(mastercatfn)[-1].replace('.cat', '') + '_' + str(len(whydrafiles) + 1)
+    elif '%i' in finame:
+        finame = finame % (len(whydrafiles) + 1)
 
     fnout = os.path.join(outdir, finame + '.ast')
 
@@ -455,9 +469,10 @@ def generate_ast_file(mastercatfn, lst, obsepoch=None, whydrafiles=None,
                 if not lprecomment.endswith('\n'):
                     fw.write('\n')
 
-    print 'SCP commands:'
-    print 'scp {0} {scpname}:/home/{scpusername}/hydra_simulator/whydra'.format(fnout, scpname=scpname, scpusername=scpusername)
-    print 'scp "{scpname}:/home/{scpusername}/hydra_simulator/whydra/{0}.hydra" hydra_targets'.format(finame, scpname=scpname, scpusername=scpusername)
+    if scpname:
+        print 'SCP commands:'
+        print 'scp {0} {scpname}:/home/{scpusername}/hydra_simulator/whydra'.format(fnout, scpname=scpname, scpusername=scpusername)
+        print 'scp "{scpname}:/home/{scpusername}/hydra_simulator/whydra/{0}.hydra" hydra_targets'.format(finame, scpname=scpname, scpusername=scpusername)
 
 
 def imagelist_selected_fops(hydrafile, copytoclipboard=True, openurl=True):
