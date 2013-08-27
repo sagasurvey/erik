@@ -1,9 +1,17 @@
 #!/usr/bin/env python
+"""
+This script is used to automate running the "whydra" program, as the actual
+program only accepts input from stdin and can't be directly controlled
+programatically.
+"""
 
-import sys, os
+import sys
+import os
 from optparse import OptionParser
-from subprocess import Popen, PIPE, STDOUT
+from subprocess import Popen, PIPE
 
+#this is an "old-style" template because the linux machines at Yale with whydra
+#often have ancient python installations that don't support the `format` method
 inpt_templ = """
 %s.ast
 %s
@@ -35,6 +43,10 @@ parser.add_option("-C", "--cen", type='float', default=1,
                   help="Amplitude of center tweak (default 1)", metavar="CENAMP")
 parser.add_option("-e", "--hydraenv", default='~/hydra_simulator/hydra.env',
                   help="Path to hydra environment file (default ~/hydra_simulator/hydra.env)", metavar="HENV")
+parser.add_option("--scp", default=False, metavar="UNHOST",
+                  help='If given, specifies the username and host (e.g. "ejt26@pegasus") '
+                       'for scping the .ast and .hydra files to/from this '
+                       'machine to another.  (default is to skip this step)')
 parser.add_option("--autoremove", default=False, action='store_true',
                   help="Remove hydra file if present without prompting.")
 
@@ -44,6 +56,9 @@ if len(args) != 1:
     print 'Need to specify base filename and no other positional arguments!'
     sys.exit(1)
 
+if not os.path.abspath(os.curdir).endswith('whydra'):
+    print 'WARNING: you are not running this in a directory called "whydra".  This may cause the script to fail.'
+
 basefn = args[0]
 
 inpt = inpt_templ % (basefn, basefn,
@@ -51,7 +66,18 @@ inpt = inpt_templ % (basefn, basefn,
                      ops.nrot, ops.rot,
                      ops.ncen, ops.cen)
 
+infn = basefn + '.ast'
 outfn = basefn + '.hydra'
+
+if ops.scp:
+    scpcmdline = 'scp %s:~/projects/saga/hydra_targets/%s .' % (ops.scp, infn)
+    print 'Running command "%s"' % scpcmdline
+    p = Popen(scpcmdline, shell=True)
+    retcode = p.wait()
+    if retcode != 0:
+        print 'scp failed (with return code %i), exiting!' % retcode
+        sys.exit(1)
+
 if os.path.exists(outfn):
     if ops.autoremove:
         print 'Removing', outfn
@@ -84,9 +110,17 @@ if retcode == 0:
         for l in outf:
             l2 = l1
             l1 = l
-        print 'Last two lines:\n',l2,l1
+        print 'Last two lines:\n', l2, l1
     finally:
         outf.close()
+
+    if ops.scp:
+        scpcmdline = 'scp %s %s:~/projects/saga/hydra_targets/' % (outfn, ops.scp)
+        print 'Running command "%s"' % scpcmdline
+        p = Popen(scpcmdline, shell=True)
+        retcode = p.wait()
+        if retcode != 0:
+            print 'scp failed (with return code %i)!' % retcode
 
 else:
     print 'whydra failed with retcode %i!  Results logged to:' % retcode, outf.name
