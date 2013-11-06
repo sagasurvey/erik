@@ -1,4 +1,4 @@
 saga-code
 =========
 
-code for the SAGA survey
+Code for the SAGA survey.
