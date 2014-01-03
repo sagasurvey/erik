@@ -383,7 +383,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         cat : table
             The SDSS catalog with the selection applied
     """
-    from astropy.table import Column
+    from astropy.table import Column, MaskedColumn
     from math import cos, radians
 
     cat = host.get_sdss_catalog()
@@ -425,7 +425,8 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         dra = cat['ra'] - host.ra
         ddec = cat['dec'] - host.dec
         rhost = ((dra * cdec) ** 2 + ddec ** 2) ** 0.5
-        cat.add_column(Column(name='rhost', data=rhost))
+        colcls = MaskedColumn if hasattr(rhost, 'mask') else Column
+        cat.add_column(colcls(name='rhost', data=rhost))
 
     if outercutrad is not None:
         if outercutrad < 0:  # arcmin

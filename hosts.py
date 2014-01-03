@@ -8,6 +8,8 @@ import sys
 import numpy as np
 from matplotlib import pyplot as plt
 
+from astropy import units as u
+
 
 class NSAHost(object):
     """
@@ -21,9 +23,9 @@ class NSAHost(object):
         The name of this host (or None to go with "NSA###").  If a list,
         the first will be the `name` attribute, while all others will be
         in `altname`
-    environsradius : float
-        The distance to consider as the edge of the "environs" - if positive,
-        this will be taken as arcmin, otherwise -kpc
+    environsradius : Quantity
+        The distance (radius) to consider as the edge of the "environs" - can be
+        given as an angle, or as a physical distance.
     fnsdss : str or None
         The filename for the SDSS data table.  If None, the default will
         be used.
@@ -56,7 +58,7 @@ class NSAHost(object):
     this writing but could in theory change.  In that case the catalog should
     be pre-sorted or something
     """
-    def __init__(self, nsaid, name=None, environsradius=-35, fnsdss=None, fnusnob=None):
+    def __init__(self, nsaid, name=None, environsradius=35*u.arcmin, fnsdss=None, fnusnob=None):
         from targeting import get_nsa
         from os import path
         from astropy.coordinates import ICRSCoordinates
@@ -101,10 +103,17 @@ class NSAHost(object):
         for i, band in enumerate('FNugriz'):
             setattr(self, band, obj['ABSMAG'][i])
 
-        if environsradius > 0:
-            self.environskpc = environsradius
+        if environsradius.unit.is_equivalent(u.kpc):
+            self.environskpc = environsradius.to(u.kpc).value
+        elif environsradius.unit.is_equivalent(u.arcmin):
+            self.environsarcmin = environsradius.to(u.arcmin).value
+        elif isinstance(environsradius, float) or isinstance(environsradius, int):
+            if environsradius > 0:
+                self.environskpc = environsradius
+            else:
+                self.environsarcmin = -environsradius
         else:
-            self.environsarcmin = -environsradius
+            raise ValueError('invalid environsradius')
 
         if fnsdss is None:
             self.fnsdss = path.join('catalogs',
@@ -127,18 +136,18 @@ class NSAHost(object):
         self.sdssquerymagcut = None
 
     @property
-    def distmpc(self):
+    def dist(self):
         """
-        Distance in Mpc (given WMAP7 cosmology/H0)
+        Distance to host (given WMAP7 cosmology/H0)
         """
         from astropy.cosmology import WMAP7
 
         return WMAP7.luminosity_distance(self.zdist)
 
     @property
-    def disterrmpc(self):
+    def disterr(self):
         """
-        Distance error in Mpc (given WMAP7 cosmology/H0)
+        Distance error (given WMAP7 cosmology/H0)
         """
         from astropy.cosmology import WMAP7
 
@@ -147,6 +156,20 @@ class NSAHost(object):
         dm = abs(dist - WMAP7.luminosity_distance(self.zdist - self.zdisterr))
 
         return (dp + dm) / 2
+
+    @property
+    def distmpc(self):
+        """
+        `dist` in Mpc (for backwards-compatibility)
+        """
+        return self.dist.to(u.Mpc).value
+
+    @property
+    def disterrmpc(self):
+        """
+        `disterr` in Mpc (for backwards-compatibility)
+        """
+        return self.disterr.to(u.Mpc).value
 
     @property
     def distmod(self):
@@ -338,7 +361,7 @@ class NSAHost(object):
         if getattr(self, '_cached_sdss', None) is None:
             from os.path import exists
             from astropy.io import ascii
-            from astropy.table import Column
+            from astropy.table import Column, MaskedColumn
 
             if exists(self.fnsdss):
                 fn = self.fnsdss
@@ -358,9 +381,13 @@ class NSAHost(object):
             pU, pB, pV, pR, pI = sdss_to_UBVRI(*[tab['psf_' + b] for b in 'ugriz'])
 
             for b in 'UBVRI':
-                tab.add_column(Column(name=b, data=locals()[b]))
+                dat = locals()[b]
+                colcls = MaskedColumn if hasattr(dat, 'mask') else Column
+                tab.add_column(colcls(name=b, data=dat))
             for b in 'UBVRI':
-                tab.add_column(Column(name='psf_' + b, data=locals()['p' + b]))
+                dat = locals()['p' + b]
+                colcls = MaskedColumn if hasattr(dat, 'mask') else Column
+                tab.add_column(colcls(name='psf_' + b, data=dat))
 
         return self._cached_sdss
 
