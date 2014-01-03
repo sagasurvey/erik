@@ -151,8 +151,8 @@ def make_catalog(host, fnout=None, targetfaintlim=(21.,22.), targetoutercutrad=3
 
     tab = Table(names=catlines[0].split('\t'), dtypes=['f', 'f', 'S50', 'S2', 'S20', 'f'])
     for e in tabentries:
-        e[0] = Angle(e[0], unit=u.hour).degrees
-        e[1] = Angle(e[1], unit=u.degree).degrees
+        e[0] = Angle(e[0], unit=u.hour).degree
+        e[1] = Angle(e[1], unit=u.degree).degree
         tab.add_row(e)
     return tab
 

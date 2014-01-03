@@ -190,8 +190,8 @@ def reprocess_catalog_for_prev_mmt_obs(fncat, hectocfg, fncatnew, rankcutoff=2, 
         print 'Removing', np.sum(~fimsk),'of', len(fimsk), 'objects due to not being in the requested fields'
         cmsk = cmsk & fimsk
 
-    hras = np.array([c.ra.degrees for c in hcoords[cmsk]])
-    hdecs = np.array([c.dec.degrees for c in hcoords[cmsk]])
+    hras = np.array([c.ra.degree for c in hcoords[cmsk]])
+    hdecs = np.array([c.dec.degree for c in hcoords[cmsk]])
 
     toldeg = tolarcsec / 3600.
 
@@ -245,8 +245,8 @@ def get_smf_entries(fn, inclholes=False):
             if l[:4] == 'SLIT' or (inclholes and (l[:4] == 'HOLE')):
                 ls = l.split()
                 names.append(ls[1])
-                radegs.append(Angle(ls[2], hour).degrees)
-                decdegs.append(Angle(ls[3], degree).degrees)
+                radegs.append(Angle(ls[2], hour).degree)
+                decdegs.append(Angle(ls[3], degree).degree)
     return names, radegs, decdegs
 
 

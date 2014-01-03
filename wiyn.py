@@ -496,8 +496,8 @@ def imagelist_selected_fops(hydrafile, copytoclipboard=True, openurl=True):
 
                 fibs.append(int(statstr))
                 names.append(l[5:26])
-                ras.append(Angle(l[26:38], unit='hour').degrees)
-                decs.append(Angle(l[39:51], unit='deg').degrees)
+                ras.append(Angle(l[26:38], unit='hour').degree)
+                decs.append(Angle(l[39:51], unit='deg').degree)
 
     print 'FOP names', names
     print 'FOP fibers', fibs
@@ -552,9 +552,9 @@ def imagelist_from_master(mastercatfn, objtype, nobjs=None, copytoclipboard=True
                 #names.append(ls[1])
                 names.append(l[5:26])
                 #ras.append(ls[2])
-                ras.append(Angle(l[26:38], unit='hour').degrees)
+                ras.append(Angle(l[26:38], unit='hour').degree)
                 #decs.append(ls[3])
-                decs.append(Angle(l[39:51], unit='deg').degrees)
+                decs.append(Angle(l[39:51], unit='deg').degree)
 
     if nobjs is None:
         nobjs = len(ras)
