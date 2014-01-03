@@ -474,14 +474,33 @@ def generate_ast_file(mastercatfn, lst, obsepoch=None, whydrafiles=None,
         print 'scp {0} {scpname}:/home/{scpusername}/hydra_simulator/whydra'.format(fnout, scpname=scpname, scpusername=scpusername)
         print 'scp "{scpname}:/home/{scpusername}/hydra_simulator/whydra/{0}.hydra" hydra_targets'.format(finame, scpname=scpname, scpusername=scpusername)
 
-
 def imagelist_selected_fops(hydrafile, copytoclipboard=True, openurl=True):
     """
-    Views the FOPs from `hydrafile` in the SDSS image list utility site.  See
-    `targeting.sampled_imagelist` for more details.
+    Short for `imagelist_fibers` with `objtype` set to 'fop' - this function
+    mainly exists for backwards compatibility.
+    """
+    return imagelist_fibers(hydrafile, 'fop', copytoclipboard=copytoclipboard,
+                            openurl=openurl)
+
+def imagelist_fibers(hydrafile, objtype, copytoclipboard=True, openurl=True):
+    """
+    Views objects from `hydrafile` in the SDSS image list utility site.
+    `objtype` can be 'target', 'fop', or 'sky'.
+
+    See `targeting.sampled_imagelist` for more details.
     """
     from astropy.coordinates import Angle
     from targeting import sampled_imagelist
+
+
+    if objtype == 'target':
+        objcode = 'O'
+    elif objtype == 'fop':
+        objcode = 'F'
+    elif objtype == 'sky':
+        objcode = 'S'
+    else:
+        raise ValueError('Invalid objtype ' + str(objtype))
 
     ras = []
     decs = []
@@ -489,7 +508,7 @@ def imagelist_selected_fops(hydrafile, copytoclipboard=True, openurl=True):
     fibs = []
     with open(hydrafile) as f:
         for l in f:
-            if 'STATUS=' in l and l[52] == 'F':
+            if 'STATUS=' in l and l[52] == objcode:
                 statstr = l.split('STATUS=')[1].strip()
                 if statstr == 'OK' or statstr == 'EDGE':
                     continue
@@ -498,10 +517,6 @@ def imagelist_selected_fops(hydrafile, copytoclipboard=True, openurl=True):
                 names.append(l[5:26])
                 ras.append(Angle(l[26:38], unit='hour').degree)
                 decs.append(Angle(l[39:51], unit='deg').degree)
-
-    print 'FOP names', names
-    print 'FOP fibers', fibs
-
     if openurl:
         return sampled_imagelist(ras, decs, len(ras), names=names, copytoclipboard=copytoclipboard)
     else:
@@ -517,7 +532,7 @@ def imagelist_from_master(mastercatfn, objtype, nobjs=None, copytoclipboard=True
     mastercatfn : str
         The file name of the master catalog
     objtype : str
-        The type of object to show.  Valid options are 'targets', 'fop', or 'sky'.
+        The type of object to show.  Valid options are 'target', 'fop', or 'sky'.
     nobjs : int or None
         The number of objects to show (randomly sampled) or None to show all
     copytoclipboard : bool

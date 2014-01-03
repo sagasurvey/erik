@@ -757,6 +757,10 @@ method="post">
 {text}
 </TEXTAREA>
 <br>
+Scale: <input class="in" type="text" value="0.4" name="scale">
+<br>
+Opt: <input class="in" type="text" value="" name="opt">
+<br>
 <input type="submit">
 </form>
 </body>
