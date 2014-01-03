@@ -95,8 +95,8 @@ class NSAHost(object):
         self.mstar = obj['MASS']
 
         galcoord = ICRSCoordinates(self.ra, self.dec, unit=('deg', 'deg')).galactic
-        self.l = galcoord.l.degrees
-        self.b = galcoord.b.degrees
+        self.l = galcoord.l.degree
+        self.b = galcoord.b.degree
 
         for i, band in enumerate('FNugriz'):
             setattr(self, band, obj['ABSMAG'][i])
@@ -190,7 +190,7 @@ class NSAHost(object):
         Returns the projected physical distance (in kpc) given an angular distance (in arcmin)
         """
         if hasattr(angle, 'degrees'):
-            angle = angle.degrees
+            angle = angle.degree
 
         return np.radians(angle) * 1000 * self.distmpc
 
