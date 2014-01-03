@@ -9,12 +9,13 @@ These functions are for the "Distant local groups" project target selection.
 import numpy as np
 from matplotlib import pyplot as plt
 
+from astropy import units as u
 
 NSA_VERSION = '0.1.2'  # used to find the download location/file name
 NSAFILENAME = 'nsa_v{0}.fits'.format(NSA_VERSION.replace('.', '_'))
 
 SDSS_SQL_URL = 'http://skyserver.sdss3.org/dr10/en/tools/search/x_sql.aspx'
-SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss3.org/dr10/en/tools/chart/listinfo.aspx'
+SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss3.org/dr10/en/tools/chart/list.aspx'
 SDSS_FINDCHART_URL = 'http://skyservice.pha.jhu.edu/DR10/ImgCutout/getjpeg.aspx'
 
 USNOB_URL = 'http://www.nofs.navy.mil/cgi-bin/vo_cone.cgi'
@@ -334,7 +335,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     galvsallcutoff=20, inclspecqsos=False, removespecstars=True,
     removegalsathighz=True, removegama='now', photflags=True,
     outercutrad=250, innercutrad=20, colorcuts={},
-    randomize=True):
+    randomize=True, removeallsdss=False):
     """
     Selects targets from the SDSS catalog.
 
@@ -365,9 +366,9 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     photflags : bool
         Apply the extended object recommended photometry flags (see
         http://www.sdss3.org/dr9/tutorials/flags.php)
-    outercutrad : number or None
-        A separation angle in *kpc* beyond which to not select targets
-        (or negative for arcmin), or None to not do this cut
+    outercutrad : Quantity or None
+        A separation angle or distance beyond which to not select targets
+        or None to not do this cut
     innercutrad : number or None
         A separation angle in *kpc* inside which to not select targets
         (or negative for arcmin), or None to not cut
@@ -377,6 +378,8 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         color cuts.
     randomize : bool
         Randomize the order of the catalog and the very end
+    removeallsdss : bool
+        If True, removes *all* SDSS spectra from the target selection
 
     Returns
     -------
@@ -428,11 +431,19 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         colcls = MaskedColumn if hasattr(rhost, 'mask') else Column
         cat.add_column(colcls(name='rhost', data=rhost))
 
+    #negative for arcmin
     if outercutrad is not None:
-        if outercutrad < 0:  # arcmin
-            outercutraddeg = -outercutrad / 60.
-        else:  # kpc
-            outercutraddeg = np.degrees(outercutrad / (1000 * host.distmpc))
+        if hasattr(outercutrad, 'unit') and outercutrad.unit.is_equivalent(u.Mpc):
+            outercutraddeg = np.degrees(outercutrad.to(u.Mpc).value / host.distmpc)
+        elif hasattr(outercutrad, 'unit') and outercutrad.unit.is_equivalent(u.degree):
+            outercutraddeg = outercutrad.to(u.degree).value
+        elif isinstance(outercutrad, float) or isinstance(outercutrad, int):  # pre-Quantity
+            if outercutrad < 0:  # arcmin
+                outercutraddeg = -outercutrad / 60.
+            else:  # kpc
+                outercutraddeg = np.degrees(outercutrad / (1000 * host.distmpc))
+        else:
+            raise ValueError('Invalid outercutrad')
     else:
         outercutraddeg = cat['rhost'].max()
 
@@ -478,6 +489,11 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         highzgals = gals & ((cat['spec_z']) > (host.zspec + 3 * host.zdisterr))
         lowzgals = gals & ((cat['spec_z']) <= (host.zspec + 3 * host.zdisterr))
         msk[highzgals] = False
+
+    if removeallsdss:
+        sdssspecs = ~cat['spec_class'].mask
+        print 'Removing ALL objects with SDSS spec: {0} of {1} objects'.format(sdssspecs.sum(), len(sdssspecs))
+        msk[sdssspecs] = False
 
     if removegama:
         g = get_gama()
