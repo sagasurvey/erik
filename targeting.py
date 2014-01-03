@@ -640,7 +640,7 @@ def usno_vs_sdss_offset(sdsscat, usnocat, plots=False, raiseerror=0.5):
 
 
 def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
-    copytoclipboard=True):
+    copytoclipboard=False, posttoimglist=3.):
     """
     Returns the text to be pasted into the sdss image list page.  Also opens
     the page (if `url` is not None) and copies the text to the clipboard if on
@@ -661,6 +661,10 @@ def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
     copytoclipboard : bool
         If True, copies the list of images to the clipboard for use on the SDSS
         web site
+    posttoimglist : bool or float
+        If True, makes a form to post to the URL site. If a float, gives the
+        number of seconds to wait until deleting the temporary file (to gives
+        the browser time to load)
 
     Returns
     -------
@@ -670,6 +674,8 @@ def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
     """
     import webbrowser
     import platform
+    import tempfile
+    import time
     import os
 
     if len(ras) != len(decs):
@@ -707,6 +713,36 @@ def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
             print("Not on a mac or linux, so can't use clipboard. ")
 
     if url:
-        webbrowser.open(url)
+        if posttoimglist:
+            page = _imglist_post_templ.format(url=url,text=text)
+            tf = tempfile.NamedTemporaryFile(delete=False)
+            tf.write(page)
+            tf.flush()
+            fiurl = 'file://' + os.path.abspath(tf.name)
+            webbrowser.open(fiurl)
+            if isinstance(posttoimglist, float):
+                time.sleep(posttoimglist)
+        else:
+            webbrowser.open(url)
 
     return text
+_imglist_post_templ = """
+<html>
+<head>
+<title>SDSS sampled_imagelist form</title>
+</head>
+<body>
+<h1> SDSS sampled_imagelist form </h1>
+<p>Using URL {url}</p>
+
+<form action="{url}"
+method="post">
+<TEXTAREA name="paste">
+{text}
+</TEXTAREA>
+<br>
+<input type="submit">
+</form>
+</body>
+</html>
+"""
