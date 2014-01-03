@@ -13,7 +13,7 @@ from matplotlib import pyplot as plt
 NSA_VERSION = '0.1.2'  # used to find the download location/file name
 NSAFILENAME = 'nsa_v{0}.fits'.format(NSA_VERSION.replace('.', '_'))
 
-SDSS_SQL_URL = 'http://skyserver.sdss3.org/dr10/en/tools/search/sql.aspx'
+SDSS_SQL_URL = 'http://skyserver.sdss3.org/dr10/en/tools/search/x_sql.aspx'
 SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss3.org/dr10/en/tools/chart/listinfo.aspx'
 SDSS_FINDCHART_URL = 'http://skyservice.pha.jhu.edu/DR10/ImgCutout/getjpeg.aspx'
 
@@ -292,7 +292,6 @@ def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
 
     try:
         q = urllib2.urlopen(url)
-        print 'grr',url
         try:
             #first read the initial two lines to check for errors
             firstline = q.readline()
