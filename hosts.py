@@ -103,11 +103,11 @@ class NSAHost(object):
         for i, band in enumerate('FNugriz'):
             setattr(self, band, obj['ABSMAG'][i])
 
-        if environsradius.unit.is_equivalent(u.kpc):
+        if hasattr(environsradius, 'unit') and environsradius.unit.is_equivalent(u.kpc):
             self.environskpc = environsradius.to(u.kpc).value
-        elif environsradius.unit.is_equivalent(u.arcmin):
+        elif hasattr(environsradius, 'unit') and environsradius.unit.is_equivalent(u.arcmin):
             self.environsarcmin = environsradius.to(u.arcmin).value
-        elif isinstance(environsradius, float) or isinstance(environsradius, int):
+        elif isinstance(environsradius, float) or isinstance(environsradius, int): #pre-Quantity behavior
             if environsradius > 0:
                 self.environskpc = environsradius
             else:
