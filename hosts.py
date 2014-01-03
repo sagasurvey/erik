@@ -344,7 +344,7 @@ class NSAHost(object):
                 else:
                     raise ValueError('USNO-B catalog does not have header - wrong format?')
 
-            self._cached_usnob = ascii.read(fn, names=colnames, guess=False)
+            self._cached_usnob = ascii.read(fn, names=colnames, guess=False, Reader=ascii.NoHeader)
 
         return self._cached_usnob
 
