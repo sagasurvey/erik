@@ -1,0 +1,13 @@
+*.pyc
+*.fits
+catalogs
+hydra_targets
+hydra_data
+mmthecto
+imacs
+imacs_targets
+imacs_data
+.DS_Store
+*.pdf
+*.png
+.ipynb_checkpoints

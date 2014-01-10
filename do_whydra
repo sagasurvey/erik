@@ -1,0 +1,126 @@
+#!/usr/bin/env python
+"""
+This script is used to automate running the "whydra" program, as the actual
+program only accepts input from stdin and can't be directly controlled
+programatically.
+"""
+
+import sys
+import os
+from optparse import OptionParser
+from subprocess import Popen, PIPE
+
+#this is an "old-style" template because the linux machines at Yale with whydra
+#often have ancient python installations that don't support the `format` method
+inpt_templ = """
+%s.ast
+%s
+%i
+%i
+y
+%i
+%f
+y
+%i
+%f
+
+"""[1:-1]
+
+
+usage = "Usage: %prog [options] basefn"
+parser = OptionParser(usage=usage)
+parser.add_option("-f", "--nfops", type='int', default=5,
+                  help="Number of FOPs to assign (default 5)", metavar="NFOPS")
+parser.add_option("-s", "--nsky", type='int', default=10,
+                  help="Number of sky fibers to assign (default 10)", metavar="NSKY")
+parser.add_option("-r", "--nrot", type='int', default=7,
+                  help="Number of times to tweak rotation. Must be odd (default 7)", metavar="NROT")
+parser.add_option("-c", "--ncen", type='int', default=7,
+                  help="Number of times to tweak center. Must be odd (default 7)", metavar="NCEN")
+parser.add_option("-R", "--rot", type='float', default=0.1,
+                  help="Amplitude of rotation tweak (default 0.1)", metavar="ROTAMP")
+parser.add_option("-C", "--cen", type='float', default=1,
+                  help="Amplitude of center tweak (default 1)", metavar="CENAMP")
+parser.add_option("-e", "--hydraenv", default='~/hydra_simulator/hydra.env',
+                  help="Path to hydra environment file (default ~/hydra_simulator/hydra.env)", metavar="HENV")
+parser.add_option("--scp", default=False, metavar="UNHOST",
+                  help='If given, specifies the username and host (e.g. "ejt26@pegasus") '
+                       'for scping the .ast and .hydra files to/from this '
+                       'machine to another.  (default is to skip this step)')
+parser.add_option("--autoremove", default=False, action='store_true',
+                  help="Remove hydra file if present without prompting.")
+
+(ops, args) = parser.parse_args()
+
+if len(args) != 1:
+    print 'Need to specify base filename and no other positional arguments!'
+    sys.exit(1)
+
+if not os.path.abspath(os.curdir).endswith('whydra'):
+    print 'WARNING: you are not running this in a directory called "whydra".  This may cause the script to fail.'
+
+basefn = args[0]
+
+inpt = inpt_templ % (basefn, basefn,
+                     ops.nfops, ops.nsky,
+                     ops.nrot, ops.rot,
+                     ops.ncen, ops.cen)
+
+infn = basefn + '.ast'
+outfn = basefn + '.hydra'
+
+if ops.scp:
+    scpcmdline = 'scp %s:~/projects/saga/hydra_targets/%s .' % (ops.scp, infn)
+    print 'Running command "%s"' % scpcmdline
+    p = Popen(scpcmdline, shell=True)
+    retcode = p.wait()
+    if retcode != 0:
+        print 'scp failed (with return code %i), exiting!' % retcode
+        sys.exit(1)
+
+if os.path.exists(outfn):
+    if ops.autoremove:
+        print 'Removing', outfn
+        os.remove(outfn)
+    else:
+        res = raw_input('File ' + outfn + ' exists! Remove? y/[n]: ')
+        if res == 'y':
+            os.remove(outfn)
+        else:
+            print 'Whydra cannot proceed if output file is present. Exiting.'
+            sys.exit(2)
+
+outf = open(basefn + '.whydralog', 'w')
+try:
+    cmdline = 'source %s; whydra' % (ops.hydraenv)
+    print 'Running "' + cmdline + '" with input:\n', inpt
+    p = Popen(cmdline, shell=True, stdin=PIPE, stdout=outf)
+    p.communicate(inpt)
+    retcode = p.wait()
+
+finally:
+    outf.close()
+
+if retcode == 0:
+    print 'whydra finished sucessfully.  Results logged to:', outf.name
+
+    outf = open(outf.name, 'r')
+    try:
+        l2 = l1 = None
+        for l in outf:
+            l2 = l1
+            l1 = l
+        print 'Last two lines:\n', l2, l1
+    finally:
+        outf.close()
+
+    if ops.scp:
+        scpcmdline = 'scp %s %s:~/projects/saga/hydra_targets/' % (outfn, ops.scp)
+        print 'Running command "%s"' % scpcmdline
+        p = Popen(scpcmdline, shell=True)
+        retcode = p.wait()
+        if retcode != 0:
+            print 'scp failed (with return code %i)!' % retcode
+
+else:
+    print 'whydra failed with retcode %i!  Results logged to:' % retcode, outf.name

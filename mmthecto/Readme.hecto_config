@@ -1,0 +1,252 @@
+
+ingredients for Hectospec configurations
+
+see ~/field2mips/hectospec[234]/Readme.*
+
+basic needs are guide stars, F stars for flux/standard 
+calibration, and science targets, combined into one catalog.
+You don't have to supply sky positions, although it is possible 
+I think.
+
+Need to have files without duplicates for the guide stars,
+however it is possible/desirable to make duplicate entries
+in the F star list so that they can be used in more than
+one configuration.  xfitfibs will design multiple configurations
+such that each object is only observed once.  So if you
+were making 5 configurations you might want to duplicate
+each F star 5x.
+
+
+----------
+Guide stars and F stars
+
+Looking at the files I've used in hectospec3/ 
+the guide stars were r = 14 to 15.  The F stars wound
+up being r = 17 to 17.71.
+
+Christopher Willmer selected my original guide star list with 
+a query like this:
+use context TargDR4 on http://casjobs.sdss.org/CasJobs
+
+select
+p.objid, p.ra, p.dec, p.psfMag_u, p.psfMag_g, p.psfMag_r, p.psfMag_i,
+p.psfMag_z, p.extinction_r into mydb.GuideStars
+from phototag p
+where
+ra >= 250.5 and ra <= 254.0  and
+dec >= 34.2 and dec <= 35.7 and
+p.psfMag_r <= 15 AND p.psfMag_r >= 14
+
+(consider also type == 6 (STAR) or probPSF_r > 0.8)
+
+This doesn't include an actual selection on stellarity,
+although that would be a good idea with a cut on probPSF_r 
+or type.  When xfitfibs is run, it will retrieve
+images (from DSS I think) to test the stars, so that would
+probably get rid of egregious problems like bright galaxies.
+Use an ra and dec corresponding to the actual target of course.
+
+
+Selecting the F stars was done with something like
+http://casjobs.sdss.org/CasJobs
+query in context TargDR4 
+
+Select top 1000
+p.objid, p.ra, p.dec, p.psfMag_u, p.psfMag_g, p.psfMag_r, p.psfMag_i,
+p.psfMag_z, p.extinction_r into mydb.MyTable from phototag p
+where
+ra >= 250.5 and ra <= 254.0  and
+dec >= 34.2 and dec <= 35.7 and
+p.psfMag_g < 18 AND
+p.secTarget&34 > 0
+
+Note that there should also be a bright limit.  I later
+applied a cut of r>17 to impose this.
+
+Christopher comments that:
+Main sequence is well defined selecting further by
+
+z > 8 && r > 0 && i > 0 && g > 0 && u > 0
+0 < u-g < 4
+0 < g-r < 2
+-1 < r-i
+
+I did not apply these cuts as well.
+
+PhotoTag is a subset of the PhotoObj table. The field
+secTarget is a bitmask for secondary target categories.
+secTarget&34 should select objects that have flags = 34
+or hex 0x22, which corresponds to requiring TARGET_SPECTROPHOTO_STD
+and TARGET_REDDEN_STD - that's presumably how this gives you
+nice F stars.
+
+I suspect that using PhotoPrimary instead of PhotoTag
+could get rid of the problem where some of the guide stars
+had multiple entries.  Same for F stars - we probably want
+to duplicate them ourselves rather than having it happen
+haphazardly.
+
+Not sure if there was a need to use the context TargDR4
+rather than DR4, etc.  Could use TargDR7 without problems
+now, I think.
+
+----------
+
+Science targets
+
+Select as needed, make sure to set a bright limit.
+A typical mag range would be r = 17 to 23, although
+expect redshift success to fall off below r=22.5,
+or r=22 for red sources (based on previous experience
+with about 90 min exposures).
+
+It is critical for the science targets, guide stars
+and F stars to be on the same astrometry.
+
+----------
+
+Ranks
+
+If all science objects are equally weighted, don't
+have to set ranks for them.  But it's a good idea
+to set the rank of F stars to higher priority (lower
+number) than the science targets to make sure some F stars
+get onto the config.  You can set a min and max number
+of fibers for each rank, so you can do something like
+set a min 7, max 10 for the rank of the F stars - 
+that way you rank them highly, but only 10 will get on
+so they don't displace the science targets.
+
+The guide stars, F stars, and science targets should all be
+concatenated into one file, with appropriate header.
+
+----------
+
+Running xfitfibs
+
+This is based on notes from a few years ago so I may 
+miss some steps.
+
+Make a catalog file with appropriate header, including the
+guide stars, F stars, targets, following the format from the
+Hecto manual. It needs to be tab-delimited, I usually make it 
+with some odd delimiter like a "Q" and then use an editor to 
+change all the "Q" to tabs at the final step.
+
+The catalog looks sort of like:
+ra              dec             object          rank    type    mag
+-----------     -----------     ----------      ----    ----    ---
+16:49:49.57       35:41:04.0     10000300245022                  guide           R= 14.81
+16:46:27.77       34:58:46.8     5643352969314478         1      target          R= 17.35
+16:46:36.56       34:42:55.0     21002834         4      target          R= 21.66
+...
+This is tab delimited so the header doesn't line up well.  The type
+is "guide" or "target" and the guide stars have an empty field in the
+rank column.  It's possible to use the type "skyobject" for defined sky 
+positions, but I have not tried it.
+
+name it something shortish like mycat2013.cat
+(because this name will propagate into all your data files
+and reductions).
+
+start xfitfibs
+
+file > open > mycat2013.cat
+
+in field window, enter in "start" box: May 8 04:00:00 2013
+  need to pick a UT when the field is actually up, but not transiting!! 
+or it will go crazy because the field rotation will be more
+than allowable
+enter exptime in minutes and nexp: e.g. 18 5  for 90 min total
+
+select grating and central wavelength - 270 and 6500
+
+table > insert row  8x to make nine rows
+(if doing nine configs)
+
+fill in date, exptime, nexp, grating, centerwave for each row
+
+click on parameters and set skymin = 30, skymax= something big, like 100
+set use gsc2_magf column and mag limits to 13.5 and 15.5.
+Also gsc2_class and nearby test should be checked by default.
+
+click fit guides tab
+In the field table, click somewhere on a row.  This activates it
+so you can drag the circle in the drawing window.  If it gets lost,
+enter a sensible field center in the ra and dec in the field table.
+(Could also enter an offset manually in RA to move the field circle,
+so that you wind up moving the field you want, although I had some
+trouble with the fields not being redrawn on my laptop.)
+
+Move field centers in drawing window.
+can click toggle guide annuli to see them.
+Don't worry about rotating yet I think.
+
+z zooms drawing window in, x zooms out.
+
+change allowed field motion to 2 arcmin, grid spacing 0.1 arcmin
+fit guides tab, click begin fit
+this can be a little slow (perhaps 3 min/config on my previous
+old laptop).
+Here it's trying to adjust the configuration positions
+and get guide stars into the guide annuli.
+
+it has now filled in the # of guide stars and the rotator angles columns,
+so it is setting the PA.  
+
+now click classify candidate guide stars; can be slow
+
+If any of the configs wind up bad due to bad guide stars,
+or you don't like where it put them in the field:
+click on their rows to highlight them and then move them around, 
+(in the drawing window I think), make sure only their red boxes 
+are checked.  change allowed field motion to 3 arcmin and 
+sampling to 0.2 arcmin to speed it up.  then click begin fit
+and it will re adjust.
+click classify candidate guide stars again - it should do
+only the ones you changed.
+click ok to remove bad stars.
+
+If you still have something with a yellow number, like r0 angle,
+help it out by changing the PA:
+
+this can be a little tricky to do on a small screen - put the field
+window somewhere where you can see the angles once the drawing
+winoow is in front, zoom the drawing window in a bit so it's easier
+to click on the angle handle, click in the field window to highlight
+which circle.  then click in the drawing window - i found clicking
+on the section of the small red guider circle that is inside the big
+Hecto circle seemed to work - and look in upper left to make sure it
+says "GuideHand" so you're rotating, not dragging.  then rotate till
+all boxes are green.
+
+Now make sure skymin and skymax are set, e.g. 30 and 100
+click on fit fibers, check the rank button to on, set rank depth = 
+whatever the max rank to use is.
+click on rank window, rank table and for rank 1 (the F stars), 
+try leaving min and max at -1 and setting minfield 8, maxfield 12.
+I tried min 8, max 15, but that didn't work well, minfield and
+maxfield were better.
+
+You can set field priorities 1-N now, although it may not
+matter.
+
+in the field table window, fit fibers tab, click begin fit
+This may take several minutes.
+
+The field table shows how many were assigned all the way over 
+on the right.
+clicking on "config window" can look at the results.
+If you have ranks, the rank window, by rank tab shows
+number assigned by rank.
+
+To submit, in the send tab set the semester/trimester,
+pick PI program number, click send.
+click list to see what happened.
+
+
+
+
+
+
+
