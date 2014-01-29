@@ -3,10 +3,10 @@
 Script/functions for generating the SAGA master host list.
 
 Requires these input data files:
-* 2MRS.csv (from the EDD: http://edd.ifa.hawaii.edu/)
-* EDD.csv (from the EDD: http://edd.ifa.hawaii.edu/)
-* LEDA.csv (from the EDD: http://edd.ifa.hawaii.edu/)
-* upnearKK.csv (from the EDD: http://edd.ifa.hawaii.edu/)
+* LEDA.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "LEDA" table with all columns, comma-separated)
+* 2MRS.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "2MRS K<11.75 " table with all columns, comma-separated)
+* EDD.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "EDD Distances" table with all columns, comma-separated)
+* KKnearbygal.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "Updated Nearby Galaxy Catalog" table with all columns, comma-separated)
 * nsa_v0_1_2.fits (from http://www.nsatlas.org/)
 
 
@@ -18,6 +18,7 @@ from __future__ import division, print_function
 import numpy as np
 
 from astropy import units as u
+from astropy.cosmology import WMAP9  # for Z->distances
 
 
 def load_edd_csv(fn):
@@ -98,19 +99,27 @@ def generate_catalog(leda, twomass, edd, kknearby, nsa, matchtolerance=1*u.arcmi
     return mastercat
 
 
-def filter_master_catalog(mastercat, vcut=3000*u.km/u.s, musthavenirphot=False):
+def filter_catalog(mastercat, vcut=3000*u.km/u.s, musthavenirphot=False):
     """
     Removes entries in the simplified catalog to meet the  master catalog selection
     criteria
     """
-    from astropy.constants import c
 
-    ckps = c.to(u.km/u.s).value
-    vcutkps = vcut.to(u.km/u.s).value
+    #possible point of confusion:`msk` is True where we want to *keep* so
+    #something, because it is used at the end as a bool index into the catalog.
+    #The MaskedColumn `mask` attribute is the opposite - True is *masked*
 
-    vmsk = (mastercat['vhelio'] < vcutkps)
+    #filter anything without an RA or Dec
+    msk = ~(mastercat['RA'].mask | mastercat['Dec'].mask)
 
-    msk = vmsk
+    #also remove everything without a distance - this includes all w/velocities,
+    #because for those the distance comes from assuming hubble flow
+    msk = msk & (~mastercat['distance'].mask)
+
+
+    # remove everything that has a velocity > `vcut`
+    if vcut is not None:
+        msk = msk & (mastercat['vhelio'] < vcut.to(u.km/u.s).value)
 
     if musthavenirphot:
         msk = msk & ((~mastercat['i'].mask) | (~mastercat['z'].mask) | (~mastercat['I'].mask) | (~mastercat['K'].mask))
@@ -118,10 +127,19 @@ def filter_master_catalog(mastercat, vcut=3000*u.km/u.s, musthavenirphot=False):
     return mastercat[msk]
 
 
-def simplify_master_catalog(mastercat):
+def simplify_catalog(mastercat, quickld=True):
     """
     Removes most of the unnecessary columns from the master catalog and joins
     fields where relevant
+
+    Parameters
+    ----------
+    mastercat : astropy.table.Table
+        The table from generate_catalog
+    quickld : bool
+        If True, means do the "quick" version of the luminosity distance
+        calculation (takes <1 sec as opposed to a min or so, but is only good
+        to a few kpc)
     """
     from astropy import table
 
@@ -140,7 +158,11 @@ def simplify_master_catalog(mastercat):
     tab.add_column(table.MaskedColumn(name='RA', data=ras, units=u.deg))
     tab.add_column(table.MaskedColumn(name='Dec', data=decs, units=u.deg))
 
-    #NAMES/IDs:
+    #Names/IDs:
+    pgc = mastercat['pgc'].copy()
+    pgc.mask = mastercat['pgc'] < 0
+    tab.add_column(table.MaskedColumn(name='PGC#', data=pgc))
+    tab.add_column(table.MaskedColumn(name='NSAID', data=mastercat['NSAID']))
     #do these in order of how 'preferred' the object name is.
     nameorder = ('Objname', 'Name_eddkk', 'objname', 'Name_2mass')  # this is: EDD, KK, LEDA, 2MASS
     #need to figure out which has the *largest* name strings, because we have a fixed number of characters
@@ -153,35 +175,55 @@ def simplify_master_catalog(mastercat):
     for nm in nameorder:
         msk = ~mastercat[nm].mask
         names[msk] = mastercat[nm][msk]
-    tab.add_column(table.MaskedColumn(name='Name', data=names))
+    tab.add_column(table.MaskedColumn(name='othername', data=names))
 
-    pgc = mastercat['pgc'].copy()
-    mastercat.mask = mastercat['pgc'] < 0
-    tab.add_column(table.MaskedColumn(name='PGCNUM', data=pgc))
+    #After this, everything should have either an NSAID, a PGC#, or a name (or more than one)
 
-    tab.add_column(table.MaskedColumn(name='NSAID', data=mastercat['NSAID']))
-
-    #VELOCITIES/redshifts and distances
+    #VELOCITIES/redshifts
     #start with LEDA
-    vs = mastercat['v']
-    v_errs = mastercat['e_v']
-    #prefer NSA if available
+    vs = mastercat['v'].astype(float)
+    v_errs = mastercat['e_v'].astype(float)
+
+    #Now add vhelio from the the EDD
+    eddvhel = mastercat['Vhel_eddkk']
+    vs[~eddvhel.mask] = eddvhel[~eddvhel.mask]
+    #EDD has no v-errors, so mask them
+    v_errs[~eddvhel.mask] = 0
+    v_errs.mask[~eddvhel.mask] = True
+
+    #then the NSA, if available
     vs[~mastercat['ZDIST'].mask] = mastercat['ZDIST'][~mastercat['ZDIST'].mask] * ckps
     v_errs[~mastercat['ZDIST_ERR'].mask] = mastercat['ZDIST_ERR'][~mastercat['ZDIST_ERR'].mask] * ckps
 
-    dist = mastercat['Dist_edd']
+    #finally, KK when present
+    kkvh = mastercat['Vh']
+    vs[~kkvh.mask] = kkvh[~kkvh.mask]
+    #KK has no v-errors, so mask them
+    v_errs[~kkvh.mask] = 0
+    v_errs.mask[~kkvh.mask] = True
+
+    #DISTANCES
+    dist = mastercat['Dist_edd'].copy()
     dist[~mastercat['Dist_kk'].mask] = mastercat['Dist_kk'][~mastercat['Dist_kk'].mask]
-    #for those without EDD or KK, use the redshift distance
-    #msk = dist.mask.copy()
-    #dist[msk] = luminosity_distance(vs/ckps)
-    #dist.mask[msk] = False
+
+    #for those *without* EDD or KK, use the redshift's luminosity distance
+    premsk = dist.mask.copy()
+    zs = vs[premsk]/ckps
+    if quickld:
+        ldx = np.linspace(zs.min(), zs.max(), 1000)
+        ldy = WMAP9.luminosity_distance(ldx).to(u.Mpc).value
+        ld = np.interp(zs, ldx, ldy)
+    else:
+        ld = WMAP9.luminosity_distance(zs).to(u.Mpc).value
+
+    dist[premsk] = ld
+    dist.mask[premsk] = vs.mask[premsk]
 
     distmod = 5 * np.log10(dist) + 25  # used in phot section
 
     tab.add_column(table.MaskedColumn(name='vhelio', data=vs))
     tab.add_column(table.MaskedColumn(name='vhelio_err', data=v_errs))
     tab.add_column(table.MaskedColumn(name='distance', data=dist, units=u.Mpc))
-
 
     #NIR PHOTOMETRY
     tab.add_column(table.MaskedColumn(name='i', data=mastercat['ABSMAG_i'] + distmod))
@@ -199,7 +241,7 @@ if __name__ == '__main__':
     print("Loading EDD catalog...")
     edd = load_edd_csv('EDD.csv')
     print("Loading KK nearby catalog...")
-    kknearby = load_edd_csv('upnearKK.csv')
+    kknearby = load_edd_csv('KKnearbygal.csv')
     nsa = load_nsa()
 
     #these variables are just for convinience in interactive work
@@ -209,10 +251,16 @@ if __name__ == '__main__':
     print('Generating master catalog...')
     mastercat = generate_catalog(*cats)
     print('Simplifying master catalog...')
-    mastercat = simplify_master_catalog(mastercat)
+    mastercat = simplify_catalog(mastercat)
     print('Filtering master catalog...')
-    mastercat = filter_master_catalog(mastercat)
+    mastercat = filter_catalog(mastercat)
 
     outfn = 'mastercat.dat'
-    #print('Writing master catalog to {outfn}...'.format(**locals()))
-    #mastercat.write(outfn, format='ascii')
+    print('Writing master catalog to {outfn}...'.format(**locals()))
+
+    oldmpo = str(np.ma.masked_print_option)
+    try:
+        np.ma.masked_print_option.set_display('')
+        mastercat.write(outfn, format='ascii', delimiter=',')
+    finally:
+        np.ma.masked_print_option.set_display(oldmpo)
