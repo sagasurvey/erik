@@ -202,6 +202,16 @@ class NSAHost(object):
     def environsarcmin(self, val):
         self._environsarcmin = val
 
+    @property
+    def coords(self):
+        """
+        The host's coordinates as an `ICRS` object.
+        """
+        from astropy.coordinates import ICRS
+
+        return ICRS(self.ra*u.deg, self.dec*u.deg)
+
+
     def physical_to_projected(self, distkpc):
         """
         Returns the angular distance (in arcmin) given a projected physical distance (in kpc)
