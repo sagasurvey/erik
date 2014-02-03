@@ -2,6 +2,9 @@
 """
 Script/functions for generating the SAGA master host list.
 
+(Initially written by Erik Tollerud, but you should always trust git commit logs
+over whatever you find in a comment at the top of the file!)
+
 Requires these input data files:
 * LEDA.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "LEDA" table with all columns, comma-separated)
 * 2MRS.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "2MRS K<11.75 " table with all columns, comma-separated)
@@ -10,8 +13,43 @@ Requires these input data files:
 * nsa_v0_1_2.fits (from http://www.nsatlas.org/)
 
 
-Note that this script can be rather memory-intensive - it works fine for me with
-16GB of memory, but much less than that might get pretty slow...
+Note that this  can be rather memory-intensive - it works fine for me with 16GB
+of memory, but much less than that might get pretty slow...
+
+
+
+Directions for use:
+
+Assuming you have git installed, here's the way to get the code:
+
+git clone https://github.com/saga-survey/saga-code.git
+
+That will create a directory "saga-code" wherever you run in. Then cd into saga-
+code/masterlist and you should see a file called "masterlist.py" in that
+directory.  That file has all the code for generating the master list.
+
+In addition to that, you'll need the various catalogs. (We don't include them in
+the saga repository because they're quite large, and github frowns on storing
+large datasets.)  The various catalogs are listed above - for the EDD files,
+you'll want *all* the columns for each catalog, downloaded as comma-separated
+value files.  For the NSA, the fits file is what you need.  Just download it all
+into the directory this script is in, or symlink from this script's directory to
+wherever you have the data.
+
+Once you've got all that data collected, you can do ``python masterlist.py`` and
+it should generate the catalog for you as a file called "masterlist.dat".  If
+you want to fiddle with the velocity cutoff  in the ``if __name__ ==
+'__main__'`` block - it should be obvious where it is there.
+
+If you want to use that catalog in a python session/script, you should be able
+to just do:
+
+import masterlist cat = masterlist.load_master_catalog()
+
+As long as you're in the masterlist directory.  Alternatively, you can just
+copy-and-paste the stuff in the ``if __name__ == '__main__'`` block if you want
+even more control.
+
 """
 from __future__ import division, print_function
 
