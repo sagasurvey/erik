@@ -325,7 +325,7 @@ if __name__ == '__main__':
     print('Simplifying master catalog...')
     mastercat1 = simplify_catalog(mastercat0)
     print('Filtering master catalog...')
-    mastercat = filter_catalog(mastercat1)
+    mastercat = filter_catalog(mastercat1, vcut=3000*u.km/u.s,)
 
     if args.outfn is not None:
         print('Writing master catalog to {outfn}...'.format(**locals()))
