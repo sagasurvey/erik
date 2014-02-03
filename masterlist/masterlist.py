@@ -233,7 +233,79 @@ def simplify_catalog(mastercat, quickld=True):
 
     return tab
 
+
+def load_master_catalog(fn='mastercat.dat'):
+    from astropy.io import ascii
+    return ascii.read(fn, delimiter=',')
+
+
+def x_match_tests(cattomatch, tol=1*u.arcsec):
+    """
+    Does a bunch of cross-matches with other catalogs. `cattomatch` must be an
+    `ICRS` object or a table.
+
+    This depends on having a bunch of other catalogs in the current directory
+    that aren't in the git repo, so you may want to just ask Erik if you want
+    to run this.
+    """
+    import RC3
+    from astropy.io import ascii
+    from astropy.coordinates import ICRS
+
+    if cattomatch.__class__.__name__.lower() == 'table':
+        ra, dec = cattomatch['RA'], cattomatch['Dec']
+        cattomatch = ICRS(u.Unit(ra.unit)*ra.view(np.ndarray), u.Unit(dec.unit)*dec.view(np.ndarray))
+
+    rc3, rc3_coo = RC3.load_rc3()
+    rc3wv = rc3[~rc3['cz'].mask]
+    rc3wv_coo = rc3_coo[~rc3['cz'].mask]
+
+    a3de = ascii.read('atlas3d_e.dat', data_start=3, format='fixed_width')
+    a3dsp = ascii.read('atlas3d_sp.dat', data_start=3, format='fixed_width')
+    a3de_coo = ICRS(u.deg*a3de['RA'], u.deg*a3de['DEC'])
+    a3dsp_coo = ICRS(u.deg*a3dsp['RA'], u.deg*a3dsp['DEC'])
+
+    nsah = ascii.read('hosts.dat')
+    nsah_coo = ICRS(u.hourangle*nsah['RA'], u.deg*nsah['DEC'])
+
+    rc3_idx, rc3_d = rc3_coo.match_to_catalog_sky(cattomatch)[:2]
+    rc3wv_idx, rc3wv_d = rc3wv_coo.match_to_catalog_sky(cattomatch)[:2]
+    a3de_idx, a3de_d = a3de_coo.match_to_catalog_sky(cattomatch)[:2]
+    a3dsp_idx, a3dsp_d = a3dsp_coo.match_to_catalog_sky(cattomatch)[:2]
+    nsah_idx, nsah_d = nsah_coo.match_to_catalog_sky(cattomatch)[:2]
+
+    rc3_nomatch = rc3_d > tol
+    rc3wv_nomatch = rc3wv_d > tol
+    a3de_nomatch = a3de_d > tol
+    a3dsp_nomatch = a3dsp_d > tol
+    nsah_nomatch = nsah_d > tol
+
+    print('RC3 non-matches: {0} of {1}'.format(np.sum(rc3_nomatch), len(rc3_nomatch)))
+    print('RC3 with v non-matches: {0} of {1}'.format(np.sum(rc3wv_nomatch), len(rc3wv_nomatch)))
+    print('ATLAS3D E non-matches: {0} of {1}'.format(np.sum(a3de_nomatch), len(a3de_nomatch)))
+    print('ATLAS3D Spiral non-matches: {0} of {1}'.format(np.sum(a3dsp_nomatch), len(a3dsp_nomatch)))
+    print('NSA Hosts non-matches: {0} of {1}'.format(np.sum(nsah_nomatch), len(nsah_nomatch)))
+
+    dct = {}
+    for nm in ('rc3', 'rc3wv', 'a3de', 'a3dsp', 'nsah'):
+        dct[nm+'_match'] = (locals()[nm])[~locals()[nm + '_nomatch']]
+        dct[nm+'_nomatch'] = (locals()[nm])[locals()[nm + '_nomatch']]
+        dct[nm+'_catidx'] = (locals()[nm+'_idx'])
+    return dct
+
+
 if __name__ == '__main__':
+    import argparse
+
+    p = argparse.ArgumentParser()
+    p.add_argument('-q', '--quiet', action='store_true')
+    p.add_argument('outfn', nargs='?', help="If this is not given, the catalog won't be saved", default=None)
+    args = p.parse_args()
+
+    if args.quiet:
+        #silences the print function
+        print = lambda s: None
+
     print("Loading LEDA catalog...")
     leda = load_edd_csv('LEDA.csv')
     print("Loading 2MASS catalog...")
@@ -249,18 +321,18 @@ if __name__ == '__main__':
     eddcats = [leda, twomass, edd, kknearby]
 
     print('Generating master catalog...')
-    mastercat = generate_catalog(*cats)
+    mastercat0 = generate_catalog(*cats)
     print('Simplifying master catalog...')
-    mastercat = simplify_catalog(mastercat)
+    mastercat1 = simplify_catalog(mastercat0)
     print('Filtering master catalog...')
-    mastercat = filter_catalog(mastercat)
+    mastercat = filter_catalog(mastercat1)
 
-    outfn = 'mastercat.dat'
-    print('Writing master catalog to {outfn}...'.format(**locals()))
+    if args.outfn is not None:
+        print('Writing master catalog to {outfn}...'.format(**locals()))
 
-    oldmpo = str(np.ma.masked_print_option)
-    try:
-        np.ma.masked_print_option.set_display('')
-        mastercat.write(outfn, format='ascii', delimiter=',')
-    finally:
-        np.ma.masked_print_option.set_display(oldmpo)
+        oldmpo = str(np.ma.masked_print_option)
+        try:
+            np.ma.masked_print_option.set_display('')
+            mastercat.write(args.outfn, format='ascii', delimiter=',')
+        finally:
+            np.ma.masked_print_option.set_display(oldmpo)
