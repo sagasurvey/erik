@@ -328,7 +328,7 @@ if __name__ == '__main__':
     mastercat = filter_catalog(mastercat1, vcut=3000*u.km/u.s,)
 
     if args.outfn is not None:
-        print('Writing master catalog to {outfn}...'.format(**locals()))
+        print('Writing master catalog to {args.outfn}...'.format(**locals()))
 
         oldmpo = str(np.ma.masked_print_option)
         try:
