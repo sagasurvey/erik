@@ -11,10 +11,11 @@ Requires these input data files:
 * EDD.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "EDD Distances" table with all columns, comma-separated)
 * KKnearbygal.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "Updated Nearby Galaxy Catalog" table with all columns, comma-separated)
 * nsa_v0_1_2.fits (from http://www.nsatlas.org/)
+As well as *optionally* this one:
+* full-sky 2MASS XSC catalog from IRSA (assumed filename '2mass_xsc_irsa.tab' - see below for how to get it)
 
-
-Note that this  can be rather memory-intensive - it works fine for me with 16GB
-of memory, but much less than that might get pretty slow...
+Note that building the catalog can be rather memory-intensive - it works fine
+for me with 16GB of memory, but much less than that might get pretty slow...
 
 
 
@@ -36,7 +37,24 @@ value files.  For the NSA, the fits file is what you need.  Just download it all
 into the directory this script is in, or symlink from this script's directory to
 wherever you have the data.
 
-Once you've got all that data collected, you can do ``python masterlist.py`` and
+If you want to use the full 2MASS catalog to get K-band mags for more objects,
+you'll need to get it from IRSA with the following procedure:
+
+1. Go to http://irsa.ipac.caltech.edu/cgi-bin/Gator/nph-scan?mission=irsa&submit=Select&projshort=2MASS
+   and choose "2MASS All-Sky Extended Source Catalog (XSC)", then hit "Select".
+2. Hit the "All Sky Search" radio button
+3. Check the columns you want.  You'll certaintly need "ra"/"dec", as well as
+   "k_m_ext" and "cc_flg".  Everything else you mat not need, but might be
+   helpful later.
+4. Hit "Run query".  IRSA will build a catalog, and you can use the "process
+   monitor" to watch until it's done.
+5. Once it's finished, hit the "done" link.  In the page that takes you to,
+   there's a "View Table" link near the bottom of the page.  Download the file
+   that link points to, and rename/symlink it to the name '2mass_xsc_irsa.tab'
+   in your working directory.
+
+
+Once you've got all the data collected, you can do ``python masterlist.py`` and
 it should generate the catalog for you as a file called "masterlist.dat".  If
 you want to fiddle with the velocity cutoff  in the ``if __name__ ==
 '__main__'`` block - it should be obvious where it is there.
@@ -53,6 +71,8 @@ even more control.
 """
 from __future__ import division, print_function
 
+import os
+
 import numpy as np
 
 from astropy import units as u
@@ -63,6 +83,29 @@ def load_edd_csv(fn):
     from astropy.io import ascii
 
     return ascii.read(fn, delimiter=',', Reader=ascii.Basic, guess=False)
+
+
+def load_2mass_xsc(fn):
+    from astropy.io import ascii
+
+    #first need to figure out where the column info header is and where the data begins
+    with open(fn) as f:
+        colinfo_idx = dat_start_idx = None
+        for i, l in enumerate(f):
+            if colinfo_idx is None:
+                if l.startswith('|'):
+                    colinfo_idx = i
+            elif not l.startswith('|'):
+                #first data line after the | lines
+                dat_start_idx = i
+                break
+        else:
+            raise ValueError('load_2mass_xsc tried to load something that does '
+                             'not look like an IRSA 2MASS output')
+
+    return ascii.read(fn, format='fixed_width', guess=False,
+                      header_start=colinfo_idx, data_start=dat_start_idx,
+                      fill_values=[('', '0'), ('null', '0')])
 
 
 def load_nsa(fn='nsa_v0_1_2.fits', verbose=False):
@@ -101,7 +144,7 @@ def load_nsa(fn='nsa_v0_1_2.fits', verbose=False):
     return newtab
 
 
-def generate_catalog(leda, twomass, edd, kknearby, nsa, matchtolerance=1*u.arcmin):
+def generate_catalog(leda, twomass, edd, kknearby, nsa, twomassxsc=None, matchtolerance=1*u.arcmin):
     from astropy import table
     from astropy.coordinates import ICRS
 
@@ -277,7 +320,7 @@ def load_master_catalog(fn='mastercat.dat'):
     return ascii.read(fn, delimiter=',')
 
 
-def x_match_tests(cattomatch, tol=1*u.arcsec):
+def x_match_tests(cattomatch, tol=1*u.arcsec, rc3vcut=None):
     """
     Does a bunch of cross-matches with other catalogs. `cattomatch` must be an
     `ICRS` object or a table.
@@ -297,6 +340,10 @@ def x_match_tests(cattomatch, tol=1*u.arcsec):
     rc3, rc3_coo = RC3.load_rc3()
     rc3wv = rc3[~rc3['cz'].mask]
     rc3wv_coo = rc3_coo[~rc3['cz'].mask]
+    if rc3vcut:
+        msk = rc3wv['cz'] < rc3vcut.to(u.km/u.s).value
+        rc3wv = rc3wv[msk]
+        rc3wv_coo = rc3wv_coo[msk]
 
     a3de = ascii.read('atlas3d_e.dat', data_start=3, format='fixed_width')
     a3dsp = ascii.read('atlas3d_sp.dat', data_start=3, format='fixed_width')
@@ -346,7 +393,7 @@ if __name__ == '__main__':
 
     print("Loading LEDA catalog...")
     leda = load_edd_csv('LEDA.csv')
-    print("Loading 2MASS catalog...")
+    print("Loading 2MRS catalog...")
     twomass = load_edd_csv('2MRS.csv')
     print("Loading EDD catalog...")
     edd = load_edd_csv('EDD.csv')
@@ -354,8 +401,14 @@ if __name__ == '__main__':
     kknearby = load_edd_csv('KKnearbygal.csv')
     nsa = load_nsa()
 
+    if os.path.exists('2mass_xsc_irsa.tab'):
+        print("Loading 2MASS XSC...")
+        twomassxsc = load_2mass_xsc('2mass_xsc_irsa.tab')
+    else:
+        twomassxsc = None
+
     #these variables are just for convinience in interactive work
-    cats = [leda, twomass, edd, kknearby, nsa]
+    cats = [leda, twomass, edd, kknearby, nsa, twomassxsc]
     eddcats = [leda, twomass, edd, kknearby]
 
     print('Generating master catalog...')
