@@ -11,3 +11,7 @@ imacs_data
 *.pdf
 *.png
 .ipynb_checkpoints
+
+masterlist/*.csv
+masterlist/*.dat
+masterlist/*.tab
