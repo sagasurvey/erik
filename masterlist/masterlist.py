@@ -180,10 +180,20 @@ def generate_catalog(leda, twomass, edd, kknearby, nsa, twomassxsc=None, matchto
     return mastercat
 
 
-def filter_catalog(mastercat, vcut=3000*u.km/u.s, musthavenirphot=False):
+def filter_catalog(mastercat, vcut, musthavenirphot=False):
     """
     Removes entries in the simplified catalog to meet the  master catalog selection
-    criteria
+    criteria.
+
+    Parameters
+    ----------
+    mastercat : Table
+        A table like that output from `generate_catalog`
+    vcut : `astropy.units.Quantity` with velocity units
+        The cutoff velocity to filter
+    musthavenirphot : bool
+        If True, filters out everything that does *not* have K, i, or z-band
+        magnitudes
     """
 
     #possible point of confusion:`msk` is True where we want to *keep* so
@@ -416,7 +426,7 @@ if __name__ == '__main__':
     print('Simplifying master catalog...')
     mastercat1 = simplify_catalog(mastercat0)
     print('Filtering master catalog...')
-    mastercat = filter_catalog(mastercat1, vcut=3000*u.km/u.s,)
+    mastercat = filter_catalog(mastercat1, vcut=4000*u.km/u.s,)
 
     if args.outfn is not None:
         print('Writing master catalog to {args.outfn}...'.format(**locals()))
