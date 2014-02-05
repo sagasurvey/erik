@@ -462,6 +462,8 @@ if __name__ == '__main__':
     if twomassxsc:
         print('Supplementing with 2MASS XSC K mags')
         mastercat = add_twomassxsc(mastercat, twomassxsc)
+    else:
+        print("You don't have a copy of the 2MASS XSC, so the fraction with K-band mags will be lower")
 
     if args.outfn is not None:
         print('Writing master catalog to {args.outfn}...'.format(**locals()))
