@@ -144,7 +144,7 @@ def load_nsa(fn='nsa_v0_1_2.fits', verbose=False):
     return newtab
 
 
-def generate_catalog(leda, twomass, edd, kknearby, nsa, twomassxsc=None, matchtolerance=1*u.arcmin):
+def generate_catalog(leda, twomass, edd, kknearby, nsa, matchtolerance=1*u.arcmin):
     from astropy import table
     from astropy.coordinates import ICRS
 
@@ -175,9 +175,7 @@ def generate_catalog(leda, twomass, edd, kknearby, nsa, twomassxsc=None, matchto
     else:
         nsa.add_column(table.Column(name='pgc', data=matchpgc))
 
-    mastercat = table.join(ledaj2, nsa, keys=['pgc'], table_names=['leda', 'nsa'], join_type='outer')
-
-    return mastercat
+    return table.join(ledaj2, nsa, keys=['pgc'], table_names=['leda', 'nsa'], join_type='outer')
 
 
 def filter_catalog(mastercat, vcut, musthavenirphot=False):
@@ -325,6 +323,39 @@ def simplify_catalog(mastercat, quickld=True):
     return tab
 
 
+def add_twomassxsc(mastercat, twomassxsc, tol=3*u.arcmin, copymastercat=False):
+    """
+    This matches `mastercat` to the 2MASS XSC and sets K-band mags in the master
+    catalog for anything that doesn't have a K mag and has an XSC entry within
+    `tol`.  Returns the new catalog (which is a copy if `copymastercat` is True,
+    otherwise it is just the same table as `mastercat`)
+
+    With a fiducial cut of cz < 4000 km/s, this goes from 30% with K-band mags
+    to 65%
+    """
+    from astropy.coordinates import ICRS
+
+    ctwomass = ICRS(u.deg*twomassxsc['ra'].view(np.ndarray), u.deg*twomassxsc['dec'].view(np.ndarray))
+    cmaster = ICRS(u.deg*mastercat['RA'].view(np.ndarray), u.deg*mastercat['Dec'].view(np.ndarray))
+    idx, dd, d3d = cmaster.match_to_catalog_sky(ctwomass)
+
+    matches = dd < tol
+
+    if copymastercat:
+        mastercat = mastercat.copy()
+    mK = mastercat['K']
+
+    premask = mK.mask.copy() # those that *do* have a K-band mag from the 2MRS/EDD
+
+    #Sets those that are not in 2MRS/EDD to have the K-band total mag from the XSC
+    mK[premask] = twomassxsc['k_m_ext'][idx][premask]
+    #now masks those of the above that are not within tol
+    mK.mask[~matches] = True
+    mK.mask[~premask] = False  # fix it up so that those with 2MRS/EDD values are not masked
+
+    return mastercat
+
+
 def load_master_catalog(fn='mastercat.dat'):
     from astropy.io import ascii
     return ascii.read(fn, delimiter=',')
@@ -418,7 +449,7 @@ if __name__ == '__main__':
         twomassxsc = None
 
     #these variables are just for convinience in interactive work
-    cats = [leda, twomass, edd, kknearby, nsa, twomassxsc]
+    cats = [leda, twomass, edd, kknearby, nsa]
     eddcats = [leda, twomass, edd, kknearby]
 
     print('Generating master catalog...')
@@ -427,6 +458,10 @@ if __name__ == '__main__':
     mastercat1 = simplify_catalog(mastercat0)
     print('Filtering master catalog...')
     mastercat = filter_catalog(mastercat1, vcut=4000*u.km/u.s,)
+
+    if twomassxsc:
+        print('Supplementing with 2MASS XSC K mags')
+        mastercat = add_twomassxsc(mastercat, twomassxsc)
 
     if args.outfn is not None:
         print('Writing master catalog to {args.outfn}...'.format(**locals()))
