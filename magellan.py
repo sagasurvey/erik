@@ -1,4 +1,4 @@
-from __future__ import division
+from __future__ import division, print_function
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -134,8 +134,8 @@ def build_imacs_targeting_files(host, observername, date='2013-02-15',
     for band, rng in refmagrange.iteritems():
         refmsk = refmsk & (min(rng) < cat['psf_' + band]) & (cat['psf_' + band] < max(rng))
 
-    fncat = 'imacs_targets/{0}.cat'.format(host.name)
-    fnobs = 'imacs_targets/{0}_ini.obs'.format(host.name)
+    fncat = 'imacs_targets/{0}.cat'.format(host.shortname)
+    fnobs = 'imacs_targets/{0}_ini.obs'.format(host.shortname)
 
     if not overwrite:
         if os.path.exists(fncat):
@@ -155,23 +155,23 @@ def build_imacs_targeting_files(host, observername, date='2013-02-15',
         #now the reference stars
         for t in cat[refmsk]:
             f.write('*{0} {1} {2} #r={3}\n'.format(*[t[n] for n in 'objID,ra,dec,r'.split(',')]))
-    print 'Wrote catalog to', fncat
+    print('Wrote catalog to', fncat)
 
     hra = Angle(host.ra, u.degree)
     hdec = Angle(host.dec, u.degree)
 
     obsmjd = int(Time(date, scale='utc').mjd)
 
-    obsfile = _obsfile_template.format(title=host.name+'_ini',
+    obsfile = _obsfile_template.format(title=host.shortname+'_ini',
         cenra=hra.format(u.hour, precision=3, sep=':', pad=True),
         cendec=hdec.format(u.degree, precision=2, sep=':', pad=True),
         observer=observername,
         obsmjd=obsmjd,
-        catfile=host.name + '.cat')
+        catfile=host.shortname + '.cat')
 
     with open(fnobs, 'w') as f:
         f.write(obsfile)
-    print 'Wrote obs file to', fnobs
+    print('Wrote obs file to', fnobs)
 
 def reprocess_catalog_for_prev_mmt_obs(fncat, hectocfg, fncatnew, rankcutoff=2, tolarcsec=1, magrng=None, hectofields='all'):
     """
@@ -187,7 +187,7 @@ def reprocess_catalog_for_prev_mmt_obs(fncat, hectocfg, fncatnew, rankcutoff=2, 
         fimsk = np.zeros_like(cmsk)
         for fi in hectofields:
             fimsk = fimsk | (hfields == fi)
-        print 'Removing', np.sum(~fimsk),'of', len(fimsk), 'objects due to not being in the requested fields'
+        print('Removing', np.sum(~fimsk),'of', len(fimsk), 'objects due to not being in the requested fields')
         cmsk = cmsk & fimsk
 
     hras = np.array([c.ra.degree for c in hcoords[cmsk]])
@@ -225,7 +225,7 @@ def reprocess_catalog_for_prev_mmt_obs(fncat, hectocfg, fncatnew, rankcutoff=2, 
 
             newcatlines.append(l)
 
-    print 'Removed', nremoved, 'from magellan catalog, leaving', nremaining,'\nwriting new catalog to', fncatnew
+    print('Removed', nremoved, 'from magellan catalog, leaving', nremaining,'\nwriting new catalog to', fncatnew)
     with open(fncatnew, 'w') as f:
         for l in newcatlines:
             f.write(l)
@@ -253,7 +253,7 @@ def get_smf_entries(fn, inclholes=False):
 def plot_imacs_masks(host, clf=True, save=False):
     from glob import glob
 
-    smfs = glob('imacs_targets/{0}_?.SMF'.format(host.name))
+    smfs = glob('imacs_targets/{0}_?.SMF'.format(host.shortname))
 
     if clf:
         plt.clf()
@@ -261,7 +261,7 @@ def plot_imacs_masks(host, clf=True, save=False):
     #catalog of everything
     ras = []
     decs = []
-    with open('imacs_targets/{0}.cat'.format(host.name)) as f:
+    with open('imacs_targets/{0}.cat'.format(host.shortname)) as f:
         for l in f:
             if l[0] == '@':
                 ra, dec = l.split()[1:3]
@@ -280,7 +280,7 @@ def plot_imacs_masks(host, clf=True, save=False):
     plt.legend(loc=0)
 
     if save:
-        plt.savefig('imacs_targets/targets_{0}.pdf'.format(host.name))
+        plt.savefig('imacs_targets/targets_{0}.pdf'.format(host.shortname))
 
 
 def imagelist_imacs_targets(smffn, n=100):

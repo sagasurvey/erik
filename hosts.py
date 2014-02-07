@@ -32,6 +32,9 @@ class NSAHost(object):
     fnusnob : str or None
         The filename for the USNO-B data table.  If None, the default
         will be used.
+    shortname : str or None
+        Sets the `shortname` attribute (described below) - if None, a shortname
+        will be created from a shortened version of the `name` attribute.
 
     Attributes
     ----------
@@ -51,6 +54,9 @@ class NSAHost(object):
         'Z' field from NSA (`z` is the photometric band)
     F,N,u,g,r,i,z : float
         magnitudes from the NSA
+    shortname : str
+        A name for the field that's 6 characters or less (needed for
+        spectrographs like IMACS that have silly character size requirements).
 
     Notes
     -----
@@ -58,7 +64,8 @@ class NSAHost(object):
     this writing but could in theory change.  In that case the catalog should
     be pre-sorted or something
     """
-    def __init__(self, nsaid, name=None, environsradius=35*u.arcmin, fnsdss=None, fnusnob=None):
+    def __init__(self, nsaid, name=None, environsradius=35*u.arcmin,
+                 fnsdss=None, fnusnob=None, shortname=None):
         from targeting import get_nsa
         from os import path
         from astropy.coordinates import ICRSCoordinates
@@ -134,6 +141,7 @@ class NSAHost(object):
             self.altfnusnob = []
 
         self.sdssquerymagcut = None
+        self.shortname = shortname
 
     @property
     def dist(self):
@@ -210,6 +218,19 @@ class NSAHost(object):
         from astropy.coordinates import ICRS
 
         return ICRS(self.ra*u.deg, self.dec*u.deg)
+
+    @property
+    def shortname(self):
+        if self._shortname is None:
+            return self.name.replace('NGC', 'N')[:6]
+        else:
+            return self._shortname
+    @shortname.setter
+    def shortname(self, value):
+        if value is not None and len(value) > 6:
+            raise ValueError('shortname must be less than 6 characters!')
+        self._shortname = value
+
 
 
     def physical_to_projected(self, distkpc):
@@ -559,7 +580,7 @@ def get_saga_hosts():
     hostsd['iliad'] = NSAHost(150238, ['Iliad', 'Achilles', 'NGC7393'])
     hostsd['lotr'] = NSAHost(155005, ['LordoftheRings', 'FrodoBaggins',  'NGC895'])
     hostsd['starwars'] = NSAHost(155005, ['StarWars', 'LukeSkywalker', 'NGC895'])
-    hostsd['aiw'] = NSAHost(140594, ['AliceInWonderland', 'Alice', 'NGC4030'])
+    hostsd['aiw'] = NSAHost(140594, ['AliceInWonderland', 'Alice', 'NGC4030'], shortname='AIW')
 
     return hostsd
 
