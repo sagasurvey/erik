@@ -1,6 +1,6 @@
-WORKINGDIR=/Users/erik/projects/distantlg/imacs_targets
-export CATPATH=/Users/erik/astrodata/imacs_catalog
-export MGPATH=/Users/erik/observing/magellan/imacs
+WORKINGDIR=`pwd`
+export CATPATH=../../../observing/magellan/imacs_catalog
+export MGPATH=../../../observing/magellan/imacs
 export PATH=$MGPATH:$PATH
 export MGPATH=$MGPATH:$WORKINGDIR
 

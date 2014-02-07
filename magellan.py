@@ -4,17 +4,25 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 """
-These functions are for the "Distant local groups" project Magellan-related work.
+These functions are for the SAGA project Magellan-related spectroscopic mask
+design.
+
+Assumes you have the IMACS mask design software
+(http://users.obs.carnegiescience.edu/clardy/imacs/maskmaking) installed.
 
 How to design IMACS masks:
-1. Generate the target list using `build_imacs_targetlists`.  This will put a
-   catalog and initial .obs file in the ``imacs_targets`` directory.
-2. Open 2 terminals, and in both, cd into ``imacs_targets`` and do ``source ../imacs.envars``
+1. Generate the target list using `build_imacs_targeting_files`.  This will put
+   a catalog and initial .obs file in the ``imacs_targets`` directory.
+2. Open 2 terminals, and in both, cd into ``imacs_targets`` and do
+   ``source ../imacs.envars``
+   (Note that you will probably need to update that file, as it's currently
+    based on paths to Magellan-related code for Erik's computer)
 3. Do "intgui -k <field>_ini.obs" in one of the terminals
 4. Change the filename and title boxes to <field>_1
 5. Use the GUI to pick the field location/rotation to optimize guide stars
-   (the top one is the most important, I think), and perhaps try the maskgen
-   button.
+   you can use the middle mouse button to re-center the mask.  You can also use
+   the "maskgen" button to do a test run of generating the mask (although you'll
+   have to do it "for real" in the next step to get the mask files).
 6. In the other terminal, do "maskgen <field>_1"
 7. In the intgui, update the file and title to "<field>_2", and change the
    catalog to "<field>_1.obw".
@@ -91,7 +99,7 @@ OBJFILE  {catfile}
 
 def build_imacs_targeting_files(host, observername, date='2013-02-15',
                                 onlygals=True, refmagrange={'r': (17, 19)},
-                                overwrite=False):
+                                overwrite=False, selectkws={}):
     """
     Generates the target catalog and initial observation file for IMACS
 
@@ -112,6 +120,8 @@ def build_imacs_targeting_files(host, observername, date='2013-02-15',
     overwrite : bool
         If True, existing files will be overwritten.  Otherwise, an error will
         be raised if the files are present.
+    selectkws : dict
+        Keywords to be passed into `targeting.select_targets`
 
     """
     import os
@@ -122,7 +132,7 @@ def build_imacs_targeting_files(host, observername, date='2013-02-15',
 
     cat = host.get_sdss_catalog()  # needed for ref stars
 
-    targs = targeting.select_targets(host)
+    targs = targeting.select_targets(host, **selectkws)
 
     if onlygals:
         galmsk = targs['type'] == 3
@@ -233,6 +243,71 @@ def reprocess_catalog_for_prev_mmt_obs(fncat, hectocfg, fncatnew, rankcutoff=2, 
     return np.array(remras), np.array(remdecs)
 
 
+def add_use(oldfn, newfn, obwtoapply):
+    """
+    Adds "Use=N" columns to a catalog as output by `build_imacs_targeting_files`
+    based on a supplied set of previous observations.
+
+    Parameters
+    ----------
+    oldfn : str
+        The ".cat" file to start from.
+    newfn : str
+        The new file to output based on `oldfn` but with "Use=N" at the end of
+        some lines.
+    obwtoapply : list of str
+        A list of ".obw" files to parse for "Use=N" entries.  Must have the same
+        object names as in `oldfn`.
+    Returns
+    -------
+    nnotfound : dict
+        A dictionary mapping from object name to the number of uses.  Only
+        includes those that were in one of `obwtoapply` but not found in
+        `oldfn`.
+    """
+    from shutil import move
+
+    objnameton = {}
+    for obwfn in obwtoapply:
+        with open(obwfn) as f:
+            for l in f:
+                if l.startswith('@'):  # indicates it's a target object
+                    ls = l.strip().split()
+                    if ls[-1].startswith('Use='):
+                        usen = int(ls[-1].replace('Use=', ''))
+                        #if it's already present and a larger usen, don't add it
+                        if not (ls[0] in objnameton and usen > objnameton[ls[0]]):
+                            objnameton[ls[0]] = usen
+
+    print('Trying to mark', len(objnameton), 'objects as used in', oldfn, 'to make', newfn)
+
+    if newfn == oldfn:
+        realnewfn = newfn
+        newfn += '.tmp'
+    else:
+        realnewfn = None
+    with open(newfn, 'w') as fw:
+        with open(oldfn) as fr:
+            for l in fr:
+                if l.startswith('@'):  # indicates it's a target object
+                    ls = l.strip().split()
+                    if ls[0] in objnameton and ' Use=' not in l:
+                        fw.write(l[:-1])  # strips the newline
+                        fw.write('  Use=' + str(objnameton.pop(ls[0])))
+                        fw.write('\n')
+                        continue
+
+                fw.write(l)
+
+    if realnewfn:
+        move(newfn, realnewfn)
+
+    if len(objnameton) > 0:
+        print(len(objnameton), 'objects in obw files', obwtoapply, 'were not matched in', oldfn)
+
+    return objnameton
+
+
 def get_smf_entries(fn, inclholes=False):
     from astropy.coordinates import Angle
     from astropy.units import hour, degree
@@ -250,10 +325,13 @@ def get_smf_entries(fn, inclholes=False):
     return names, radegs, decdegs
 
 
-def plot_imacs_masks(host, clf=True, save=False):
+def plot_imacs_masks(host, clf=True, save=False, eastleft=False):
     from glob import glob
 
-    smfs = glob('imacs_targets/{0}_?.SMF'.format(host.shortname))
+    smfs = glob('imacs_targets/{0}_*.SMF'.format(host.shortname))
+    smfs = dict([(int(smf.split('_')[-1].split('.')[0]), smf) for smf in smfs])
+    smfs = [smfs[i] for i in sorted(smfs)]
+    print(smfs)
 
     if clf:
         plt.clf()
@@ -278,6 +356,11 @@ def plot_imacs_masks(host, clf=True, save=False):
     plt.xlabel('RA [deg]')
     plt.ylabel('Dec [deg]')
     plt.legend(loc=0)
+
+    if eastleft:
+        plt.xlim(max(plt.xlim()), min(plt.xlim()))
+    else:
+        plt.xlim(min(plt.xlim()), max(plt.xlim()))
 
     if save:
         plt.savefig('imacs_targets/targets_{0}.pdf'.format(host.shortname))
@@ -326,7 +409,6 @@ def load_ricardo_rvs_and_match(fn='rv_ricardo_jul32013.dat', fields=None, vtouse
         decs.append(fis[fi][2][idx])
 
     return dict([(enm, np.array(locals()[enm])) for enm in 'nms,ras,decs,rvs,rverrs,fns,specclass'.split(',')])
-
 
 
 
