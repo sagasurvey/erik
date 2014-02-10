@@ -178,6 +178,48 @@ def generate_catalog(leda, twomass, edd, kknearby, nsa, matchtolerance=1*u.arcmi
     return table.join(ledaj2, nsa, keys=['pgc'], table_names=['leda', 'nsa'], join_type='outer')
 
 
+def manually_tweak_simplified_catalog(simplifiedcat):
+    """
+    This just updates a few entries in the catalog that seem to be missing
+    velocities for unclear reasons
+    """
+    from astropy.coordinates import ICRS
+    from astropy.constants import c
+
+    infolines = """
+    46.480833  54.266111   2051.8    No velocity in NED PGC 011632
+    46.704583  54.588333   2859.3    No velocity in NED
+    50.288333  66.921667   2637.1    Velocity in NED, but no LEDA entry
+    99.794583 -1.5075000   2887.9    No velocity in NED
+    102.57375 -2.8605556   2699.9    No velocity in NED
+    102.93875 -3.6077778   2867.4    No velocity in NED
+    114.40708 -26.746667   2964.5    Velocity in NED, LEDA source, but not HyperLeda
+    116.32750 -32.516667   2162.0    Velocity in NED, LEDA source, but not HyperLeda
+    123.74833 -30.866667   1761.0    Velocity in NED, PGC 023091 (note in NED re; position error?)
+    """.split('\n')[1:-1]
+
+    ras = []
+    decs = []
+    vels = []
+    for l in infolines:
+        ls = l.split()
+        ras.append(float(ls[0]))
+        decs.append(float(ls[1]))
+        vels.append(float(ls[2]))
+
+    updatecoos = ICRS(ras*u.deg, decs*u.deg)
+    catcoos = ICRS(simplifiedcat['RA'].view(np.ndarray)*u.deg,
+                   simplifiedcat['Dec'].view(np.ndarray)*u.deg)
+    idx, dd, d3d = updatecoos.match_to_catalog_sky(catcoos)
+
+    simplifiedcat = simplifiedcat.copy()
+    simplifiedcat['vhelio'][idx] = vels = np.array(vels)
+    simplifiedcat['distance'][idx] = WMAP9.luminosity_distance(
+        vels / c.to(u.km / u.s).value).to(u.Mpc).value
+
+    return simplifiedcat
+
+
 def filter_catalog(mastercat, vcut, musthavenirphot=False):
     """
     Removes entries in the simplified catalog to meet the  master catalog selection
@@ -456,6 +498,7 @@ if __name__ == '__main__':
     mastercat0 = generate_catalog(*cats)
     print('Simplifying master catalog...')
     mastercat1 = simplify_catalog(mastercat0)
+    #mastercat1 = manually_tweak_simplified_catalog(mastercat1)
     print('Filtering master catalog...')
     mastercat = filter_catalog(mastercat1, vcut=4000*u.km/u.s,)
 
