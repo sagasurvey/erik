@@ -233,20 +233,31 @@ class NSAHost(object):
 
 
 
-    def physical_to_projected(self, distkpc):
+    def physical_to_projected(self, dist):
         """
-        Returns the angular distance (in arcmin) given a projected physical distance (in kpc)
+        Returns the angular distance (in arcmin) given a projected physical
+        distance. `distkpc` must be a Quantity.
+        E.g., ``physical_to_projected(30*u.arcmin)``
         """
-        return np.degrees(distkpc / (1000 * self.distmpc)) * 60
+        if u.kpc.is_equivalent(dist):
+            dist = dist.to(u.mpc).value
+        else:
+            raise ValueError('need to give physical_to_projected a Quantity.')
+
+        return np.degrees(dist / self.distmpc) * 60 * u.arcmin
 
     def projected_to_physical(self, angle):
         """
-        Returns the projected physical distance (in kpc) given an angular distance (in arcmin)
+        Returns the projected physical distance (in kpc) given an angular
+        distance. `angle` must be a Quantity.
+        E.g., ``projected_to_physical(30*u.arcmin)``
         """
-        if hasattr(angle, 'degrees'):
-            angle = angle.degree
+        if u.degree.is_equivalent(angle):
+            angle = angle.to(u.degree).value
+        else:
+            raise ValueError('need to give projected_to_physical a Quantity.')
 
-        return np.radians(angle) * 1000 * self.distmpc
+        return np.radians(angle) * 1000 * self.distmpc * u.kpc
 
     def sdss_environs_query(self, dl=False, usecas=False, magcut=None):
         """
