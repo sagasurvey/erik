@@ -579,7 +579,7 @@ def get_saga_hosts():
     hostsd['odyssey'] = NSAHost(147100, ['Odyssey', 'Odysseus', 'NGC6181'])
     hostsd['iliad'] = NSAHost(150238, ['Iliad', 'Achilles', 'NGC7393'])
     hostsd['lotr'] = NSAHost(155005, ['LordoftheRings', 'FrodoBaggins',  'NGC895'])
-    hostsd['starwars'] = NSAHost(155005, ['StarWars', 'LukeSkywalker', 'NGC895'])
+    hostsd['starwars'] = NSAHost(53145, ['StarWars', 'LukeSkywalker', 'NGC5485'])
     hostsd['aiw'] = NSAHost(140594, ['AliceInWonderland', 'Alice', 'NGC4030'], shortname='AIW')
 
     return hostsd
