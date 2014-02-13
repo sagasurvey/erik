@@ -292,8 +292,12 @@ class NSAHost(object):
             magcut=magcut)
 
         if dl:
-            if exists(self.fnsdss):
-                print 'File', self.fnsdss, 'exists - not downloading anything.'
+            altfns = [self.fnsdss]
+            altfns.extend(self.altfnsdss)
+            for fn in altfns:
+                if exists(fn):
+                    print 'File', fn, 'exists - not downloading anything.'
+                    break
             else:
                 msg = 'Downloading NSA ID{0} to {1}'.format(self.nsaid, self.fnsdss)
                 download_sdss_query(query, fn=self.fnsdss, dlmsg=msg,
@@ -325,8 +329,12 @@ class NSAHost(object):
         usnourl = construct_usnob_query(self.ra, self.dec, raddeg, verbosity=1)
 
         if dl:
-            if exists(self.fnusnob):
-                print 'File', self.fnusnob, 'exists - not downloading anything.'
+            altfns = [self.fnusnob]
+            altfns.extend(self.altfnusnob)
+            for fn in altfns:
+                if exists(fn):
+                    print 'File', fn, 'exists - not downloading anything.'
+                    break
             else:
                 u = urllib2.urlopen(usnourl)
                 try:
