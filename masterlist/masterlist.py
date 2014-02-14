@@ -27,9 +27,9 @@ into the directory this script is in, or symlink from this script's directory to
 wherever you have the data.
 
 
-Once you've got all the data collected, you can do ``python masterlist.py`` and
-it should generate the catalog for you as a file called "masterlist.dat".  If
-you want to fiddle with the velocity cutoff  in the ``if __name__ ==
+Once you've got all the data collected, you can do ``python masterlist.py masterlist.csv``
+and it should generate the catalog for you as a file called "masterlist.dat".
+If you want to fiddle with the velocity cutoff  in the ``if __name__ ==
 '__main__'`` block - it should be obvious where it is there.
 
 If you want to use that catalog in a python session/script, you should be able
@@ -54,11 +54,24 @@ These are required:
 * EDD.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "EDD Distances" table with all columns, comma-separated)
 * KKnearbygal.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "Updated Nearby Galaxy Catalog" table with all columns, comma-separated)
 * nsa_v0_1_2.fits (from http://www.nsatlas.org/)
+* 6dF catalog (see instructions below)
 
 Optional, with info below:
-* full-sky 2MASS XSC catalog from IRSA (assumed filename '2mass_xsc_irsa.tab' - see below for how to get it)
+* full-sky 2MASS XSC catalog from IRSA (see instructions below)
 
 
+6dF Catalog
+-----------
+
+Go to http://www-wfau.roe.ac.uk/6dFGS/SQL.html and execute the query below.
+Make sure to check the boxes to output as csv and to
+"Output RA & DEC as decimal degrees (default is sexagesimal)"
+
+SELECT specid,targetname,obsra,obsdec,z_helio,zfinalerr,quality
+FROM spectra
+WHERE (quality=3 or quality=4) and progID <=8
+
+Download the result, and save it to "6dF.csv"
 
 2MASS XSC
 ---------
@@ -79,16 +92,6 @@ you'll need to get it from IRSA with the following procedure:
    that link points to, and rename/symlink it to the name '2mass_xsc_irsa.tab'
    in your working directory.
 
-6dF Catalog
------------
-
-Go to http://www-wfau.roe.ac.uk/6dFGS/SQL.html and execute this query:
-
-SELECT specid,targetname,obsra,obsdec,z_helio, zfinalerr, quality
-FROM spectra
-WHERE (quality=3 or quality=4) and progID <=8
-
-Then save it to "6dF.csv"
 
 
 
@@ -202,86 +205,6 @@ def generate_catalog(leda, twomass, edd, kknearby, nsa, matchtolerance=1*u.arcmi
     return table.join(ledaj2, nsa, keys=['pgc'], table_names=['leda', 'nsa'], join_type='outer')
 
 
-def manually_tweak_simplified_catalog(simplifiedcat):
-    """
-    This just updates a few entries in the catalog that seem to be missing
-    velocities for unclear reasons
-    """
-    from astropy.coordinates import ICRS
-    from astropy.constants import c
-
-    infolines = """
-    46.480833  54.266111   2051.8    No velocity in NED PGC 011632
-    46.704583  54.588333   2859.3    No velocity in NED
-    50.288333  66.921667   2637.1    Velocity in NED, but no LEDA entry
-    99.794583 -1.5075000   2887.9    No velocity in NED
-    102.57375 -2.8605556   2699.9    No velocity in NED
-    102.93875 -3.6077778   2867.4    No velocity in NED
-    114.40708 -26.746667   2964.5    Velocity in NED, LEDA source, but not HyperLeda
-    116.32750 -32.516667   2162.0    Velocity in NED, LEDA source, but not HyperLeda
-    123.74833 -30.866667   1761.0    Velocity in NED, PGC 023091 (note in NED re; position error?)
-    """.split('\n')[1:-1]
-
-    ras = []
-    decs = []
-    vels = []
-    for l in infolines:
-        ls = l.split()
-        ras.append(float(ls[0]))
-        decs.append(float(ls[1]))
-        vels.append(float(ls[2]))
-
-    updatecoos = ICRS(ras*u.deg, decs*u.deg)
-    catcoos = ICRS(simplifiedcat['RA'].view(np.ndarray)*u.deg,
-                   simplifiedcat['Dec'].view(np.ndarray)*u.deg)
-    idx, dd, d3d = updatecoos.match_to_catalog_sky(catcoos)
-
-    simplifiedcat = simplifiedcat.copy()
-    simplifiedcat['vhelio'][idx] = vels = np.array(vels)
-    simplifiedcat['distance'][idx] = WMAP9.luminosity_distance(
-        vels / c.to(u.km / u.s).value).to(u.Mpc).value
-
-    return simplifiedcat
-
-
-def filter_catalog(mastercat, vcut, musthavenirphot=False):
-    """
-    Removes entries in the simplified catalog to meet the  master catalog selection
-    criteria.
-
-    Parameters
-    ----------
-    mastercat : Table
-        A table like that output from `generate_catalog`
-    vcut : `astropy.units.Quantity` with velocity units
-        The cutoff velocity to filter
-    musthavenirphot : bool
-        If True, filters out everything that does *not* have K, i, or z-band
-        magnitudes
-    """
-
-    #possible point of confusion:`msk` is True where we want to *keep* so
-    #something, because it is used at the end as a bool index into the catalog.
-    #The MaskedColumn `mask` attribute is the opposite - True is *masked*
-
-    #filter anything without an RA or Dec
-    msk = ~(mastercat['RA'].mask | mastercat['Dec'].mask)
-
-    #also remove everything without a distance - this includes all w/velocities,
-    #because for those the distance comes from assuming hubble flow
-    msk = msk & (~mastercat['distance'].mask)
-
-
-    # remove everything that has a velocity > `vcut`
-    if vcut is not None:
-        msk = msk & (mastercat['vhelio'] < vcut.to(u.km/u.s).value)
-
-    if musthavenirphot:
-        msk = msk & ((~mastercat['i'].mask) | (~mastercat['z'].mask) | (~mastercat['I'].mask) | (~mastercat['K'].mask))
-
-    return mastercat[msk]
-
-
 def simplify_catalog(mastercat, quickld=True):
     """
     Removes most of the unnecessary columns from the master catalog and joins
@@ -305,6 +228,7 @@ def simplify_catalog(mastercat, quickld=True):
     tab = table.Table()
 
     #RADEC:
+    # start with LEDA, then if missing add
     ras = mastercat['al2000']*15
     ras[~mastercat['RA'].mask] = mastercat['RA'][~mastercat['RA'].mask]
     decs = mastercat['de2000']
@@ -389,6 +313,86 @@ def simplify_catalog(mastercat, quickld=True):
     return tab
 
 
+def manually_tweak_simplified_catalog(simplifiedcat):
+    """
+    This just updates a few entries in the catalog that seem to be missing
+    velocities for unclear reasons
+    """
+    from astropy.coordinates import ICRS
+    from astropy.constants import c
+
+    infolines = """
+    46.480833  54.266111   2051.8    No velocity in NED PGC 011632
+    46.704583  54.588333   2859.3    No velocity in NED
+    50.288333  66.921667   2637.1    Velocity in NED, but no LEDA entry
+    99.794583 -1.5075000   2887.9    No velocity in NED
+    102.57375 -2.8605556   2699.9    No velocity in NED
+    102.93875 -3.6077778   2867.4    No velocity in NED
+    114.40708 -26.746667   2964.5    Velocity in NED, LEDA source, but not HyperLeda
+    116.32750 -32.516667   2162.0    Velocity in NED, LEDA source, but not HyperLeda
+    123.74833 -30.866667   1761.0    Velocity in NED, PGC 023091 (note in NED re; position error?)
+    """.split('\n')[1:-1]
+
+    ras = []
+    decs = []
+    vels = []
+    for l in infolines:
+        ls = l.split()
+        ras.append(float(ls[0]))
+        decs.append(float(ls[1]))
+        vels.append(float(ls[2]))
+
+    updatecoos = ICRS(ras*u.deg, decs*u.deg)
+    catcoos = ICRS(simplifiedcat['RA'].view(np.ndarray)*u.deg,
+                   simplifiedcat['Dec'].view(np.ndarray)*u.deg)
+    idx, dd, d3d = updatecoos.match_to_catalog_sky(catcoos)
+
+    simplifiedcat = simplifiedcat.copy()
+    simplifiedcat['vhelio'][idx] = vels = np.array(vels)
+    simplifiedcat['distance'][idx] = WMAP9.luminosity_distance(
+        vels / c.to(u.km / u.s).value).to(u.Mpc).value
+
+    return simplifiedcat
+
+
+def filter_catalog(mastercat, vcut, musthavenirphot=False):
+    """
+    Removes entries in the simplified catalog to meet the  master catalog selection
+    criteria.
+
+    Parameters
+    ----------
+    mastercat : Table
+        A table like that output from `generate_catalog`
+    vcut : `astropy.units.Quantity` with velocity units
+        The cutoff velocity to filter
+    musthavenirphot : bool
+        If True, filters out everything that does *not* have K, i, or z-band
+        magnitudes
+    """
+
+    #possible point of confusion:`msk` is True where we want to *keep* so
+    #something, because it is used at the end as a bool index into the catalog.
+    #The MaskedColumn `mask` attribute is the opposite - True is *masked*
+
+    #filter anything without an RA or Dec
+    msk = ~(mastercat['RA'].mask | mastercat['Dec'].mask)
+
+    #also remove everything without a distance - this includes all w/velocities,
+    #because for those the distance comes from assuming hubble flow
+    msk = msk & (~mastercat['distance'].mask)
+
+
+    # remove everything that has a velocity > `vcut`
+    if vcut is not None:
+        msk = msk & (mastercat['vhelio'] < vcut.to(u.km/u.s).value)
+
+    if musthavenirphot:
+        msk = msk & ((~mastercat['i'].mask) | (~mastercat['z'].mask) | (~mastercat['I'].mask) | (~mastercat['K'].mask))
+
+    return mastercat[msk]
+
+
 def add_twomassxsc(mastercat, twomassxsc, tol=3*u.arcmin, copymastercat=False):
     """
     This matches `mastercat` to the 2MASS XSC and sets K-band mags in the master
@@ -420,6 +424,56 @@ def add_twomassxsc(mastercat, twomassxsc, tol=3*u.arcmin, copymastercat=False):
     mK.mask[~premask] = False  # fix it up so that those with 2MRS/EDD values are not masked
 
     return mastercat
+
+
+def add_6df(simplifiedmastercat, sixdf, tol=1*u.arcmin):
+    """
+    Adds entries in the catalog for the 6dF survey, or updates v when missing
+    """
+    from astropy import table
+    from astropy.coordinates import ICRS
+    from astropy.constants import c
+
+    ckps = c.to(u.km/u.s).value
+
+    catcoo = ICRS(simplifiedmastercat['RA'].view(np.ndarray)*u.deg, simplifiedmastercat['Dec'].view(np.ndarray)*u.deg)
+    sixdfcoo = ICRS(sixdf['obsra'].view(np.ndarray)*u.deg, sixdf['obsdec'].view(np.ndarray)*u.deg)
+
+    idx, dd, d3d = sixdfcoo.match_to_catalog_sky(catcoo)
+    msk = dd < tol
+
+    sixdfnomatch = sixdf[~msk]
+
+    t = table.Table()
+    t.add_column(table.MaskedColumn(name='RA', data=sixdfnomatch['obsra']))
+    t.add_column(table.MaskedColumn(name='Dec', data=sixdfnomatch['obsdec']))
+    t.add_column(table.MaskedColumn(name='PGC#', data=-np.ones(len(sixdfnomatch), dtype=int), mask=np.ones(len(sixdfnomatch), dtype=bool)))
+    t.add_column(table.MaskedColumn(name='NSAID', data=-np.ones(len(sixdfnomatch), dtype=int), mask=np.ones(len(sixdfnomatch), dtype=bool)))
+    t.add_column(table.MaskedColumn(name='othername', data=sixdfnomatch['targetname']))
+    t.add_column(table.MaskedColumn(name='vhelio', data=sixdfnomatch['z_helio']*ckps))
+    t.add_column(table.MaskedColumn(name='vhelio_err', data=sixdfnomatch['zfinalerr']*ckps))
+    t.add_column(table.MaskedColumn(name='distance', data=WMAP9.luminosity_distance(sixdfnomatch['z_helio']).value))
+
+    #fill in anything else needed with -999 and masked
+    for nm in simplifiedmastercat.colnames:
+        if nm not in t.colnames:
+            t.add_column(table.MaskedColumn(name=nm, data=-999*np.ones(len(sixdfnomatch), dtype=int), mask=np.ones(len(sixdfnomatch), dtype=bool)))
+
+    t = table.vstack([simplifiedmastercat, t], join_type='exact')
+
+    #now update anything that *did* match but doesn't have another velocity
+    tcoo = ICRS(t['RA'].view(np.ndarray)*u.deg, t['Dec'].view(np.ndarray)*u.deg)
+
+    idx, dd, d3d = sixdfcoo.match_to_catalog_sky(tcoo)
+    msk = dd < tol
+
+    catmatch = t[idx[msk]]
+    sixdfmatch = sixdf[msk]
+
+    msk2 = t['vhelio'][idx[msk]].mask
+    t['vhelio'][idx[msk&msk2]] = sixdf['z_helio'][msk2]*ckps
+
+    return t
 
 
 def load_master_catalog(fn='mastercat.dat'):
@@ -539,6 +593,9 @@ if __name__ == '__main__':
     print("Loading KK nearby catalog...")
     kknearby = load_edd_csv('KKnearbygal.csv')
     nsa = load_nsa()
+    print('Loading 6dF...')
+    #6dF is not an EDD catalog, but happens to be the same format
+    sixdf = load_edd_csv('6dF.csv')
 
     if os.path.exists('2mass_xsc_irsa.tab'):
         print("Loading 2MASS XSC...")
@@ -555,8 +612,10 @@ if __name__ == '__main__':
     print('Simplifying master catalog...')
     mastercat1 = simplify_catalog(mastercat0)
     #mastercat1 = manually_tweak_simplified_catalog(mastercat1)
+    print('Adding 6df to master catalog...')
+    mastercat2 = add_6df(mastercat1, sixdf)
     print('Filtering master catalog...')
-    mastercat = filter_catalog(mastercat1, vcut=4000*u.km/u.s,)
+    mastercat = filter_catalog(mastercat2, vcut=4000*u.km/u.s)
 
     if twomassxsc:
         print('Supplementing with 2MASS XSC K mags')
