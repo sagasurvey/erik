@@ -5,21 +5,10 @@ Script/functions for generating the SAGA master host list.
 (Initially written by Erik Tollerud, but you should always trust git commit logs
 over whatever you find in a comment at the top of the file!)
 
-Requires these input data files:
-* LEDA.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "LEDA" table with all columns, comma-separated)
-* 2MRS.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "2MRS K<11.75 " table with all columns, comma-separated)
-* EDD.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "EDD Distances" table with all columns, comma-separated)
-* KKnearbygal.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "Updated Nearby Galaxy Catalog" table with all columns, comma-separated)
-* nsa_v0_1_2.fits (from http://www.nsatlas.org/)
-As well as *optionally* this one:
-* full-sky 2MASS XSC catalog from IRSA (assumed filename '2mass_xsc_irsa.tab' - see below for how to get it)
-
-Note that building the catalog can be rather memory-intensive - it works fine
-for me with 16GB of memory, but much less than that might get pretty slow...
 
 
-
-Directions for use:
+Directions for use
+------------------
 
 Assuming you have git installed, here's the way to get the code:
 
@@ -37,6 +26,43 @@ value files.  For the NSA, the fits file is what you need.  Just download it all
 into the directory this script is in, or symlink from this script's directory to
 wherever you have the data.
 
+
+Once you've got all the data collected, you can do ``python masterlist.py`` and
+it should generate the catalog for you as a file called "masterlist.dat".  If
+you want to fiddle with the velocity cutoff  in the ``if __name__ ==
+'__main__'`` block - it should be obvious where it is there.
+
+If you want to use that catalog in a python session/script, you should be able
+to just do:
+
+import masterlist cat = masterlist.load_master_catalog()
+
+As long as you're in the masterlist directory.  Alternatively, you can just
+copy-and-paste the stuff in the ``if __name__ == '__main__'`` block if you want
+even more control.
+
+Note that building the catalog can be rather memory-intensive - it works fine
+for me with 16GB of memory, but much less than that might get pretty slow...
+
+
+Data files
+----------
+
+These are required:
+* LEDA.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "LEDA" table with all columns, comma-separated)
+* 2MRS.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "2MRS K<11.75 " table with all columns, comma-separated)
+* EDD.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "EDD Distances" table with all columns, comma-separated)
+* KKnearbygal.csv (from the EDD: http://edd.ifa.hawaii.edu/ - the "Updated Nearby Galaxy Catalog" table with all columns, comma-separated)
+* nsa_v0_1_2.fits (from http://www.nsatlas.org/)
+
+Optional, with info below:
+* full-sky 2MASS XSC catalog from IRSA (assumed filename '2mass_xsc_irsa.tab' - see below for how to get it)
+
+
+
+2MASS XSC
+---------
+
 If you want to use the full 2MASS catalog to get K-band mags for more objects,
 you'll need to get it from IRSA with the following procedure:
 
@@ -53,20 +79,18 @@ you'll need to get it from IRSA with the following procedure:
    that link points to, and rename/symlink it to the name '2mass_xsc_irsa.tab'
    in your working directory.
 
+6dF Catalog
+-----------
 
-Once you've got all the data collected, you can do ``python masterlist.py`` and
-it should generate the catalog for you as a file called "masterlist.dat".  If
-you want to fiddle with the velocity cutoff  in the ``if __name__ ==
-'__main__'`` block - it should be obvious where it is there.
+Go to http://www-wfau.roe.ac.uk/6dFGS/SQL.html and execute this query:
 
-If you want to use that catalog in a python session/script, you should be able
-to just do:
+SELECT specid,targetname,obsra,obsdec,z_helio, zfinalerr, quality
+FROM spectra
+WHERE (quality=3 or quality=4) and progID <=8
 
-import masterlist cat = masterlist.load_master_catalog()
+Then save it to "6dF.csv"
 
-As long as you're in the masterlist directory.  Alternatively, you can just
-copy-and-paste the stuff in the ``if __name__ == '__main__'`` block if you want
-even more control.
+
 
 """
 from __future__ import division, print_function
@@ -403,7 +427,7 @@ def load_master_catalog(fn='mastercat.dat'):
     return ascii.read(fn, delimiter=',')
 
 
-def x_match_tests(cattomatch, tol=1*u.arcsec, rc3vcut=None):
+def x_match_tests(cattomatch, tol=1*u.arcmin, vcuts=None):
     """
     Does a bunch of cross-matches with other catalogs. `cattomatch` must be an
     `ICRS` object or a table.
@@ -411,10 +435,20 @@ def x_match_tests(cattomatch, tol=1*u.arcsec, rc3vcut=None):
     This depends on having a bunch of other catalogs in the current directory
     that aren't in the git repo, so you may want to just ask Erik if you want
     to run this.
+
+    `vcut`s are appliced to RC3 and 6dF
+
+    data files:
+    RC3 comes from the vizier version.
+    hosts.dat are the original SAGA hosts file before the masterlist work
+    atlas3d_* are from Marla from somewhere...
+    zcat.fits is from vizier's ZCAT copy
     """
     import RC3
-    from astropy.io import ascii
+    from astropy.io import ascii, fits
     from astropy.coordinates import ICRS
+
+    from astropy.constants import c
 
     if cattomatch.__class__.__name__.lower() == 'table':
         ra, dec = cattomatch['RA'], cattomatch['Dec']
@@ -423,8 +457,8 @@ def x_match_tests(cattomatch, tol=1*u.arcsec, rc3vcut=None):
     rc3, rc3_coo = RC3.load_rc3()
     rc3wv = rc3[~rc3['cz'].mask]
     rc3wv_coo = rc3_coo[~rc3['cz'].mask]
-    if rc3vcut:
-        msk = rc3wv['cz'] < rc3vcut.to(u.km/u.s).value
+    if vcuts:
+        msk = rc3wv['cz'] < vcuts.to(u.km/u.s).value
         rc3wv = rc3wv[msk]
         rc3wv_coo = rc3wv_coo[msk]
 
@@ -436,26 +470,48 @@ def x_match_tests(cattomatch, tol=1*u.arcsec, rc3vcut=None):
     nsah = ascii.read('hosts.dat')
     nsah_coo = ICRS(u.hourangle*nsah['RA'], u.deg*nsah['DEC'])
 
+    sixdf = ascii.read('6dF.csv',guess=False,delimiter=',')
+    sixdf_coo = ICRS(u.deg*sixdf['obsra'], u.deg*sixdf['obsdec'])
+    if vcuts:
+        msk = sixdf['z_helio'] < (vcuts/c).decompose().value
+        sixdf = sixdf[msk]
+        sixdf_coo = sixdf_coo[msk]
+
+    zcat = fits.getdata('zcat.fits')
+    zcat_coo = ICRS(u.deg*zcat['_RAJ2000'], u.deg*zcat['_DEJ2000'])
+    if vcuts:
+        msk = (zcat['Vh'] < (vcuts).to(u.km/u.s).value)
+        msk = msk & (zcat['Vh'] > -1000)  #get rid of those w/o velocities
+        zcat = zcat[msk]
+        zcat_coo = zcat_coo[msk]
+
+
     rc3_idx, rc3_d = rc3_coo.match_to_catalog_sky(cattomatch)[:2]
     rc3wv_idx, rc3wv_d = rc3wv_coo.match_to_catalog_sky(cattomatch)[:2]
     a3de_idx, a3de_d = a3de_coo.match_to_catalog_sky(cattomatch)[:2]
     a3dsp_idx, a3dsp_d = a3dsp_coo.match_to_catalog_sky(cattomatch)[:2]
     nsah_idx, nsah_d = nsah_coo.match_to_catalog_sky(cattomatch)[:2]
+    sixdf_idx, sixdf_d = sixdf_coo.match_to_catalog_sky(cattomatch)[:2]
+    zcat_idx, zcat_d = zcat_coo.match_to_catalog_sky(cattomatch)[:2]
 
     rc3_nomatch = rc3_d > tol
     rc3wv_nomatch = rc3wv_d > tol
     a3de_nomatch = a3de_d > tol
     a3dsp_nomatch = a3dsp_d > tol
     nsah_nomatch = nsah_d > tol
+    sixdf_nomatch = sixdf_d > tol
+    zcat_nomatch = zcat_d > tol
 
     print('RC3 non-matches: {0} of {1}'.format(np.sum(rc3_nomatch), len(rc3_nomatch)))
     print('RC3 with v non-matches: {0} of {1}'.format(np.sum(rc3wv_nomatch), len(rc3wv_nomatch)))
     print('ATLAS3D E non-matches: {0} of {1}'.format(np.sum(a3de_nomatch), len(a3de_nomatch)))
     print('ATLAS3D Spiral non-matches: {0} of {1}'.format(np.sum(a3dsp_nomatch), len(a3dsp_nomatch)))
     print('NSA Hosts non-matches: {0} of {1}'.format(np.sum(nsah_nomatch), len(nsah_nomatch)))
+    print('6dF non-matches: {0} of {1}'.format(np.sum(sixdf_nomatch), len(sixdf_nomatch)))
+    print('ZCAT non-matches: {0} of {1}'.format(np.sum(zcat_nomatch), len(zcat_nomatch)))
 
     dct = {}
-    for nm in ('rc3', 'rc3wv', 'a3de', 'a3dsp', 'nsah'):
+    for nm in ('rc3', 'rc3wv', 'a3de', 'a3dsp', 'nsah', 'sixdf', 'zcat'):
         dct[nm+'_match'] = (locals()[nm])[~locals()[nm + '_nomatch']]
         dct[nm+'_nomatch'] = (locals()[nm])[locals()[nm + '_nomatch']]
         dct[nm+'_catidx'] = (locals()[nm+'_idx'])
