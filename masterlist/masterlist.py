@@ -304,7 +304,8 @@ def simplify_catalog(mastercat, quickld=True):
     tab.add_column(table.MaskedColumn(name='vhelio_err', data=v_errs))
     tab.add_column(table.MaskedColumn(name='distance', data=dist, units=u.Mpc))
 
-    #NIR PHOTOMETRY
+    #PHOTOMETRY
+    tab.add_column(table.MaskedColumn(name='r', data=mastercat['ABSMAG_r'] + distmod))
     tab.add_column(table.MaskedColumn(name='i', data=mastercat['ABSMAG_i'] + distmod))
     tab.add_column(table.MaskedColumn(name='z', data=mastercat['ABSMAG_z'] + distmod))
     tab.add_column(table.MaskedColumn(name='I', data=mastercat['it']))

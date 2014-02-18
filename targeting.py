@@ -383,7 +383,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
 
     Returns
     -------
-        cat : table
+        cat : astropy.table.Table
             The SDSS catalog with the selection applied
     """
     from astropy.table import Column, MaskedColumn
