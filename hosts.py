@@ -456,6 +456,83 @@ class NSAHost(object):
         altnamepart = '' if len(self.altnames) == 0 else (' AKA: ' + str(self.altnames))
         return "<{clsname} object w/ name '{name}'{altnamepart}>".format(clsname=clsname, name=self.name, altnamepart=altnamepart)
 
+    def sdss_image_cutout(self, savefn=None, drorurl=10, imagesize=(512, 512),
+                          opts='', scale = '0.396127', targets=None,
+                          raoffset=0*u.deg, decoffset=0*u.deg):
+        """
+        Saves an SDSS image of the host, optionally with a list of targets
+        marked.
+
+        This requires the `requests` package (http://requests.readthedocs.org/).
+
+        Parameters
+        ----------
+        savefn : None or str
+            The file name to save to, or None to not save
+        drorurl : str or int
+            If an int, this is the data release to use, otherwise a string URL
+            pointing to the image cutout URL.
+        imagesize : 2-tuple of its
+            Size of the image in (width, height)
+        opts : str
+            Options the SDSS server accepts like showing photometric objects or
+            scale bars or the like.  Go to the finding chart tool to see
+            exmaples.
+        scale : number or angle Quantity
+            If a raw number, it will be taken as the image scale in arcsec per
+            pixel. If an angle Quantity, it's the size of the *whole* image.
+        targets : None or table
+            A table of targets to mark.  Should be the same sort of table output
+            by `targeting.select_targets`.
+        raoffset : angle Quantity
+            How much to offset the image center in RA
+        decoffset : angle Quantity
+            How much to offset the image center in Dec
+
+        Returns
+        -------
+        imagedata
+            Either the image suitable for IPython if you're in IPython, or the
+            raw image data if not.
+        """
+        import requests
+
+        if isinstance(drorurl, basestring):
+            url = drorurl
+        else:
+            url = 'http://skyservice.pha.jhu.edu/DR' + str(drorurl) + '/ImgCutout/getjpeg.aspx'
+
+        if u.arcsec.is_equivalent(scale):
+            avgimagesize = sum(imagesize) / len(imagesize)
+            scale = scale.to(u.arcsec).value / avgimagesize
+
+        if targets is None:
+            qry = ''
+        else:
+            qry = ['id ra dec']
+            for t in targets:
+                qry.append('{0} {1} {2}'.format(t['objID'], t['ra'], t['dec']))
+            qry = '\n'.join(qry)
+
+        res = requests.post(url, data={'ra': (self.coords.ra + raoffset).to(u.deg).value,
+                                       'dec': (self.coords.dec + decoffset).to(u.deg).value,
+                                       'width': imagesize[0],
+                                       'height': imagesize[1],
+                                       'opt': opts,
+                                       'scale': scale,
+                                       'query': qry})
+
+        if savefn:
+            with open(savefn, 'w') as f:
+                f.write(res.content)
+
+        try:
+            __IPYTHON__
+            from IPython.display import Image
+            return Image(data=res.content, format='jpeg')
+        except NameError:
+            return res.content
+
 
 def download_with_progress_updates(u, fw, nreports=100, msg=None, outstream=sys.stdout):
     """
