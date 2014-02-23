@@ -130,7 +130,7 @@ def select_sky_positions(host, nsky=250, sdsscat=None, usnocat=None, nearnesslim
 
 
 def construct_master_catalog(host, fnout=None, targetcat={}, fopcat=None,
-    skyradec=None, faintlimit=None, fibermaglimit=None):
+    skyradec=None, faintlimit=None, fibermaglimit=None, orderby=None):
     """
     This function produces the "master" catalog for each host for WIYN/hydra
     observations. The master catalog contains lines for all the objects/sky/fops
@@ -160,6 +160,16 @@ def construct_master_catalog(host, fnout=None, targetcat={}, fopcat=None,
     fibermaglimit : float or None
         The faint-end cutoff for fiber2mag_r in the target catalog,
         or None to have no cutoff
+    orderby: str or list of str
+        Order the target list in order by field(2) in the target catalog.  If
+        prefixed with '-', it's in *decreasing* order, otherwise increasing
+        (i.e., without '-', smallest number first).  The special 'lowphotz'
+        means to change order to blocks of [photz<.1, nophotz, photz>.1]
+
+    Returns
+    -------
+    targetcat
+        The catalog of targets used to generate the object list
     """
     import os
     from collections import Mapping
@@ -189,6 +199,25 @@ def construct_master_catalog(host, fnout=None, targetcat={}, fopcat=None,
     print len(fopcat), 'FOPS'
     if skyradec is None:
         skyradec = select_sky_positions(host)
+
+    if orderby:
+        if isinstance(orderby, basestring):
+            orderby = [orderby]
+
+        for field in orderby:
+            if field=='lowphotz':
+                pz = targetcat['photz']
+                highz = np.where(pz > .1)[0]
+                lowz = np.where((-1 < pz)&(pz < .1))[0]
+                noz = np.where(pz==-1)[0]
+                print ('Found {0} objects at low photz, {1} at high, and {2} '
+                       'without photz'.format(len(lowz), len(highz), len(noz)))
+                sorti = np.concatenate([lowz, noz, highz])
+            elif field.startswith('-'):
+                sorti = np.argsort(targetcat[field[1:]])[::-1]
+            else:
+                sorti = np.argsort(targetcat[field])
+            targetcat = targetcat[sorti]
 
     if len(targetcat) > 1999:  # 1999 because the central object also gets one
         print('whydra cannot handle > 2000 objects, truncating')
@@ -240,6 +269,8 @@ def construct_master_catalog(host, fnout=None, targetcat={}, fopcat=None,
             i += 1
             j += 1
             fw.write('\n')
+
+    return targetcat
 
 
 def _whydra_file_line(i, name, radeg, decdeg, code):

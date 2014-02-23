@@ -125,7 +125,7 @@ def get_gama(fn=None):
     return tab
 
 
-def construct_sdss_query(ra, dec, radius=1, into=None, magcut=None):
+def construct_sdss_query(ra, dec, radius=1, into=None, magcut=None, inclphotzs=False):
     """
     Generates the query to send to the SDSS to get the full SDSS catalog around
     a target.
@@ -146,6 +146,8 @@ def construct_sdss_query(ra, dec, radius=1, into=None, magcut=None):
     magcut : 2-tuple or None
         if not None, adds a magnitude cutoff.  Should be a 2-tuple
         ('magname', faintlimit). Ignored if None.
+    inclphotzs : bool
+        If True, includes a further join to add phot-zs where present
 
     Returns
     -------
@@ -168,13 +170,14 @@ def construct_sdss_query(ra, dec, radius=1, into=None, magcut=None):
     p.deVMag_r, p.deVMag_r + 2.5*log10(2*PI()*p.deVRad_r*p.deVRad_r + 1e-20) as sb_deV_r,
     p.lnLExp_r, p.lnLDeV_r, p.lnLStar_r,
     p.extinction_u as Au, p.extinction_g as Ag, p.extinction_r as Ar, p.extinction_i as Ai, p.extinction_z as Az,
-    ISNULL(s.z, -1) as spec_z, ISNULL(s.zErr, -1) as spec_z_err, ISNULL(s.zWarning, -1) as spec_z_warn, s.class as spec_class, s.subclass as spec_subclass
+    ISNULL(s.z, -1) as spec_z, ISNULL(s.zErr, -1) as spec_z_err, ISNULL(s.zWarning, -1) as spec_z_warn, s.class as spec_class,
+    s.subclass as spec_subclass{photzdata}
 
 
     {into}
     FROM {funcprefix}fGetNearbyObjEq({ra}, {dec}, {radarcmin}) n, PhotoPrimary p
     LEFT JOIN SpecObj s ON p.specObjID = s.specObjID
-    WHERE n.objID = p.objID{magcutwhere}
+    {photzjoins}WHERE n.objID = p.objID{magcutwhere}
     """)
     #if using casjobs, functions need 'dbo' in front of them for some reason
     if into is None:
@@ -191,9 +194,15 @@ def construct_sdss_query(ra, dec, radius=1, into=None, magcut=None):
     else:
         magcutwhere = ' and p.{0} < {1}'.format(*magcut)
 
+    if inclphotzs:
+        pzdata = ', ISNULL(pz.z,-1) as photz,ISNULL(pz.zerr,-1) as photz_err'
+        pzjoins = 'LEFT JOIN PhotoZ pz ON p.ObjID = pz.ObjID\n'
+    else:
+        pzdata = pzjoins = ''
+
     return query_template.format(ra=float(ra), dec=float(dec),
         radarcmin=radius * 60., into=intostr, funcprefix=funcprefix,
-        magcutwhere=magcutwhere)
+        magcutwhere=magcutwhere, photzdata=pzdata, photzjoins=pzjoins)
 
 
 def construct_usnob_query(ra, dec, radius=1, verbosity=1, votable=False, baseurl=USNOB_URL):
@@ -488,6 +497,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         #"high" z means more than 3sigma above the host's redshift
         highzgals = gals & ((cat['spec_z']) > (host.zspec + 3 * host.zdisterr))
         lowzgals = gals & ((cat['spec_z']) <= (host.zspec + 3 * host.zdisterr))
+        print 'Removing {0} objects at high z, keeping {1} (total of {2} objects)'.format(highzgals.sum(), lowzgals.sum(), len(lowzgals))
         msk[highzgals] = False
 
     if removeallsdss:

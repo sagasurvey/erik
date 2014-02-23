@@ -259,7 +259,8 @@ class NSAHost(object):
 
         return np.radians(angle) * 1000 * self.distmpc * u.kpc
 
-    def sdss_environs_query(self, dl=False, usecas=False, magcut=None):
+    def sdss_environs_query(self, dl=False, usecas=False, magcut=None,
+                            inclphotzs=False):
         """
         Constructs an SDSS query to get the SDSS objects around this
         host and possibly downloads the catalog.
@@ -279,6 +280,8 @@ class NSAHost(object):
         magcut : float or None
             `magcut` as accepted by `targeting.construct_sdss_query` or
             None to use `self.sdssquerymagcut`
+    inclphotzs : bool
+        If True, includes a further join to add phot-zs where present
 
         Returns
         -------
@@ -300,7 +303,7 @@ class NSAHost(object):
 
         query = construct_sdss_query(self.ra, self.dec, raddeg,
             into=('{0}_environs'.format(self.name)) if usecas else None,
-            magcut=magcut)
+            magcut=magcut, inclphotzs=inclphotzs)
 
         if dl:
             altfns = [self.fnsdss]
@@ -675,8 +678,9 @@ def get_saga_hosts():
     hostsd['odyssey'] = NSAHost(147100, ['Odyssey', 'Odysseus', 'NGC6181'])
     hostsd['iliad'] = NSAHost(150238, ['Iliad', 'Achilles', 'NGC7393'])
     hostsd['lotr'] = NSAHost(155005, ['LordoftheRings', 'FrodoBaggins',  'NGC895'])
-    hostsd['starwars'] = NSAHost(53145, ['StarWars', 'LukeSkywalker', 'NGC5485'])
+    hostsd['starwars'] = NSAHost(53145, ['StarWars', 'LukeSkywalker', 'NGC5485'], shortname='SW')
     hostsd['aiw'] = NSAHost(140594, ['AliceInWonderland', 'Alice', 'NGC4030'], shortname='AIW')
+    hostsd['beowulf'] = NSAHost(135667, ['Beowulf', 'Beowulf', 'NGC2750'], shortname='beo')
 
     return hostsd
 
