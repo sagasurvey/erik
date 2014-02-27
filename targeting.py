@@ -284,6 +284,7 @@ def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
     you exceed them you'll get an error and
 
     """
+    import os
     import urllib2
     import datetime
     from urllib import urlencode
