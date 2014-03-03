@@ -1,5 +1,7 @@
 from __future__ import division
 
+from astropy import units as u
+
 """
 These functions are for the SAGA project's WIYN/HYDRA-related work.
 
@@ -302,10 +304,121 @@ def _whydra_file_line(i, name, radeg, decdeg, code):
         dec=decstr, code=code)
 
 
+def update_master_catalog(oldmastercatfn, newmastercatfn,
+                          consolidategrps=1*u.arcsec,
+                          removecoords=None,
+                          removecoordtol=1*u.arcsec):
+    """
+    This takes a master catalog `oldmastercatfn` and writes it out to
+    `newmastercatfn` with modifications:
+
+    * if `consolidategrps` is not None, it will take clusterings of objects
+      within `consolidategrps` distance and remove all except the brightest
+    * if `removecoords` is not None, it should be a coordinate object that will
+      be matched to the input catalog as objects to *remove* from the output
+      catalog.  Typically for targets already successfully observed.
+
+    Returns the catalog rows that were *removed*
+    """
+    from astropy.coordinates import ICRS
+
+    with open(oldmastercatfn) as f:
+        lines = [l for l in f]
+
+    toremove = np.zeros(len(lines), dtype='S10')  # string gives the removal reason
+
+    ras = []
+    decs = []
+    isobj = []
+    mags = []
+    for l in lines:
+        ls = l.split()
+        ras.append(ls[2])
+        decs.append(ls[3])
+        isobj.append(ls[4]=='O')
+        if 'mag_' in ls[-1]:
+            mags.append(float(ls[-1].split('=')[-1]))
+        else:
+            mags.append(999.)
+    isobj = np.array(isobj, dtype=bool)
+    mags = np.array(mags)
+
+    coos = ICRS(ras, decs, unit=(u.hourangle, u.degree))
+    objcoos = coos[isobj]
+
+    if removecoords is not None:
+        idx, dd, d3d = removecoords.match_to_catalog_sky(objcoos)
+
+        toremove[np.arange(len(toremove))[isobj][idx[dd < removecoordtol]]] = 'matched'
+
+        print sum(dd < removecoordtol), 'objects in master catalog matched to be removed of', len(removecoords.ra), 'possible'
+
+    if consolidategrps is not None:
+        pairs = []
+        n = 2
+        while n > 0:
+            idx, dd, d3d = objcoos.match_to_catalog_sky(objcoos, n)
+
+            for i1, i2 in zip(np.where(dd <= consolidategrps)[0],
+                              idx[dd <= consolidategrps]):
+                pairs.append((i1, i2))
+
+            if dd.arcsec.min() > consolidategrps.to(u.arcsec).value:
+                #none are smaller than the minimum separation
+                n = -1
+            else:
+                n += 1
+
+        pairs = np.array(pairs)
+        #make first in pair minimum
+        toswap = np.argmin(pairs, 1).astype(bool)
+        pairs[toswap] = pairs[toswap, ::-1]
+        #sort in ascending order on min/0th
+        pairs = pairs[np.argsort(pairs[:, 0])]
+
+        grpnums = np.arange(len(objcoos.ra))
+
+        i = 0
+        while np.any(grpnums[pairs[:, 1]] != grpnums[pairs[:, 0]]):
+            for i1, i2 in pairs:
+                #go *in order* (which is why we can't do this with numpy directly)
+                grpnums[i1] = grpnums[i2]
+            i += 1
+            if i > 100:
+                raise ValueError('did>100 iterations, probably stuck?')
+
+        #now gather the groups, and set all those *except* the brightest one to
+        #False
+        nremoved = ngrps = 0
+        #note that the indexes in the groups are *object-only* indecies, not
+        #everything including skys and FOPS
+        objidxs = np.arange(len(toremove))[isobj]
+        objmags = mags[isobj]
+        for grp in np.unique(grpnums):
+            msk = grpnums == grp
+            if np.sum(msk) > 1:
+                ngrps += 1
+                magsort = np.argsort(objmags[msk])
+                toremove[objidxs[msk][magsort[1:]]] = 'grpw' + str(objidxs[msk][magsort[0]])
+                nremoved += len(magsort) - 1
+
+        print 'Removed', nremoved, 'from', ngrps, 'clustered groups'
+
+    removedlines = []
+    with open(newmastercatfn, 'w') as f:
+        for i, l in enumerate(lines):
+            if toremove[i]:
+                removedlines.append(l)
+            else:
+                f.write(l)
+
+    return removedlines, toremove[toremove != '']
+
+
 def reprocess_master_catalog(mastercatfn, whydraoutputs=None):
     """
-    Takes the requested master catalog, removes all *target* objects that have been
-    assigned a fiber previously, and returns the resulting catalog.
+    Takes the requested master catalog, removes all *object* targets that have
+    been assigned a fiber previously, and returns the resulting catalog.
 
     Parameters
     ----------
@@ -554,7 +667,62 @@ def imagelist_fibers(hydrafile, objtype, copytoclipboard=True, openurl=True):
         return sampled_imagelist(ras, decs, len(ras), names=names, copytoclipboard=copytoclipboard, url=None)
 
 
-def imagelist_from_master(mastercatfn, objtype, nobjs=None, copytoclipboard=True, openurl=True):
+def parse_master(mastercatfn, objtype):
+    """
+    Returns a table of entries from a WIYN master catalog.
+
+    Parameters
+    ----------
+    mastercatfn : str
+        The file name of the master catalog
+    objtype : str
+        The type of object to show.  Valid options are 'target', 'fop', 'sky', or 'all'.
+
+    Returns
+    -------
+    table : astropy.table.Table
+        A table with the 'objID', 'ra', and 'dec' columns
+    """
+    from astropy.coordinates import Angle
+    from astropy.table import Table, Column
+
+    ras = []
+    decs = []
+    names = []
+
+    if objtype == 'target':
+        objcode = 'O'
+    elif objtype == 'fop':
+        objcode = 'F'
+    elif objtype == 'sky':
+        objcode = 'S'
+    elif objtype == 'all':
+        objcode = ''
+    else:
+        raise ValueError('Invalid objtype ' + str(objtype))
+
+    with open(mastercatfn) as f:
+        for l in f:
+            ls = l.split()
+
+            if l[0].startswith('#') or len(ls) < 5:
+                continue
+
+            if (not objcode) or ls[4] == objcode:
+                names.append(l[5:26])
+                ras.append(Angle(l[26:38], unit='hour').degree)
+                decs.append(Angle(l[39:51], unit='deg').degree)
+
+    tab = Table()
+    tab.add_column(Column(data=names, name='objID'))
+    tab.add_column(Column(data=ras, name='ra'))
+    tab.add_column(Column(data=decs, name='dec'))
+    return tab
+
+
+def imagelist_from_master(mastercatfn, objtype, nobjs=None,
+                          copytoclipboard=True, openurl=True,
+                          nearloc=None):
     """
     Shows objects from a WIYN master catalog in the imagelist tool.
 
@@ -570,37 +738,25 @@ def imagelist_from_master(mastercatfn, objtype, nobjs=None, copytoclipboard=True
         If True, the imagelist table is copied to the clipboard
     openurl : bool
         If True, the imagelist url is opened in a web browser window
+    nearloc : 2-tuple (coord, angle) or None
+        Only show objects within `angle` of `coord` if not None
     """
-    from astropy.coordinates import Angle
+    from astropy.coordinates import ICRS
     from targeting import sampled_imagelist
 
-    ras = []
-    decs = []
-    names = []
+    tab = parse_master(mastercatfn, objtype)
 
-    if objtype == 'target':
-        objcode = 'O'
-    elif objtype == 'fop':
-        objcode = 'F'
-    elif objtype == 'sky':
-        objcode = 'S'
-    else:
-        raise ValueError('Invalid objtype ' + str(objtype))
+    ras = tab['ra']
+    decs = tab['dec']
+    names = tab['objID']
 
-    with open(mastercatfn) as f:
-        for l in f:
-            ls = l.split()
-
-            if l[0].startswith('#') or len(ls) < 5:
-                continue
-
-            if ls[4] == objcode:
-                #names.append(ls[1])
-                names.append(l[5:26])
-                #ras.append(ls[2])
-                ras.append(Angle(l[26:38], unit='hour').degree)
-                #decs.append(ls[3])
-                decs.append(Angle(l[39:51], unit='deg').degree)
+    if nearloc:
+        coord, angle = nearloc
+        dsep = ICRS(ras*u.deg, decs*u.deg).separation(coord)
+        msk = dsep < angle
+        ras = ras[msk]
+        decs = decs[msk]
+        names = names[msk]
 
     if nobjs is None:
         nobjs = len(ras)
