@@ -5,8 +5,10 @@ hydra_targets
 hydra_data
 mmthecto
 imacs
+imacs_maskgen
 imacs_targets
 imacs_data
+keck_data
 .DS_Store
 *.pdf
 *.png
