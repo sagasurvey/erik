@@ -17,3 +17,5 @@ keck_data
 masterlist/*.csv
 masterlist/*.dat
 masterlist/*.tab
+
+parsetab.py
