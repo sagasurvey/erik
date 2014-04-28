@@ -1,7 +1,7 @@
 """
 Defines the hosts for the distant local group project
 """
-from __future__ import division
+from __future__ import division, print_function
 
 import sys
 
@@ -9,6 +9,19 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 from astropy import units as u
+
+
+NSA_VERSION = '0.1.2'  # used to find the download location/file name
+NSAFILENAME = 'nsa_v{0}.fits'.format(NSA_VERSION.replace('.', '_'))
+
+SDSS_SQL_URL = 'http://skyserver.sdss3.org/dr10/en/tools/search/x_sql.aspx'
+
+USNOB_URL = 'http://www.nofs.navy.mil/cgi-bin/vo_cone.cgi'
+
+GAMA_URL = 'http://www.gama-survey.org/dr1/data/GamaCoreDR1_v1.csv.gz'
+#gama stated limit: r < 19.8
+
+TELL_IF_USING_CACHED = False  # If True, show an informational message about where the NSA is coming from
 
 
 class NSAHost(object):
@@ -66,9 +79,8 @@ class NSAHost(object):
     """
     def __init__(self, nsaid, name=None, environsradius=35*u.arcmin,
                  fnsdss=None, fnusnob=None, shortname=None):
-        from targeting import get_nsa
         from os import path
-        from astropy.coordinates import ICRSCoordinates
+        from astropy.coordinates import ICRS, Galactic
 
         self.nsaid = nsaid  # The NSA ID #
 
@@ -103,7 +115,7 @@ class NSAHost(object):
         self.zspec = obj['Z']
         self.mstar = obj['MASS']
 
-        galcoord = ICRSCoordinates(self.ra, self.dec, unit=('deg', 'deg')).galactic
+        galcoord = ICRS(self.ra*u.deg, self.dec*u.deg).transform_to(Galactic)
         self.l = galcoord.l.degree
         self.b = galcoord.b.degree
 
@@ -260,7 +272,7 @@ class NSAHost(object):
         return np.radians(angle) * 1000 * self.distmpc * u.kpc
 
     def sdss_environs_query(self, dl=False, usecas=False, magcut=None,
-                            inclphotzs=False):
+                            inclphotzs=True, applyphotflags=False):
         """
         Constructs an SDSS query to get the SDSS objects around this
         host and possibly downloads the catalog.
@@ -278,10 +290,13 @@ class NSAHost(object):
             If True, includes an `INTO` in the SQL for use with casjobs.
             Ignored if `dl` is True
         magcut : float or None
-            `magcut` as accepted by `targeting.construct_sdss_query` or
+            `magcut` as accepted by `construct_sdss_query` or
             None to use `self.sdssquerymagcut`
-    inclphotzs : bool
-        If True, includes a further join to add phot-zs where present
+        inclphotzs : bool
+            If True, includes a further join to add phot-zs where present
+        applyphotflags : bool
+            If True, adds photometry flags to the query (See
+            `construct_sdss_query` for exact flags)
 
         Returns
         -------
@@ -295,7 +310,6 @@ class NSAHost(object):
             if the requested id is not in the catalog.
         """
         from os.path import exists
-        from targeting import construct_sdss_query, download_sdss_query
 
         raddeg = self.environsarcmin / 60.
         usecas = False if dl else usecas
@@ -303,14 +317,14 @@ class NSAHost(object):
 
         query = construct_sdss_query(self.ra, self.dec, raddeg,
             into=('{0}_environs'.format(self.name)) if usecas else None,
-            magcut=magcut, inclphotzs=inclphotzs)
+            magcut=magcut, inclphotzs=inclphotzs, applyphotflags=applyphotflags)
 
         if dl:
             altfns = [self.fnsdss]
             altfns.extend(self.altfnsdss)
             for fn in altfns:
                 if exists(fn):
-                    print 'File', fn, 'exists - not downloading anything.'
+                    print('File', fn, 'exists - not downloading anything.')
                     break
             else:
                 msg = 'Downloading NSA ID{0} to {1}'.format(self.nsaid, self.fnsdss)
@@ -336,7 +350,6 @@ class NSAHost(object):
         """
         from os.path import exists
         import urllib2
-        from targeting import construct_usnob_query
 
         raddeg = self.environsarcmin / 60.
 
@@ -347,7 +360,7 @@ class NSAHost(object):
             altfns.extend(self.altfnusnob)
             for fn in altfns:
                 if exists(fn):
-                    print 'File', fn, 'exists - not downloading anything.'
+                    print('File', fn, 'exists - not downloading anything.')
                     break
             else:
                 u = urllib2.urlopen(usnourl)
@@ -379,7 +392,7 @@ class NSAHost(object):
             else:
                 for fn in self.altfnusnob:
                     if exists(fn):
-                        print 'Could not find file "{0}" but did find "{1}" so using that.'.format(self.fnusnob, fn)
+                        print('Could not find file "{0}" but did find "{1}" so using that.'.format(self.fnusnob, fn))
                         break
                 else:
                     #didn't find one
@@ -421,7 +434,7 @@ class NSAHost(object):
             else:
                 for fn in self.altfnsdss:
                     if exists(fn):
-                        print 'Could not find file "{0}" but did find "{1}" so using that.'.format(self.fnsdss, fn)
+                        print('Could not find file "{0}" but did find "{1}" so using that.'.format(self.fnsdss, fn))
                         break
                 else:
                     #didn't find one
@@ -629,6 +642,361 @@ def load_all_hosts(hostsfile='hosts.dat', existinghosts='globals', usedlgname=Fa
             i += 1
 
     return d
+
+
+_cachednsa={}
+def get_nsa(fn=None):
+    """
+    Download the NASA Sloan Atlas if it hasn't been already, open it, and
+    return the data.
+
+    Parameters
+    ----------
+    fn : str or None
+        The name of the file to load (or to save as if its not present).  If
+        None, the convention from the NSA web site will be used.
+
+    Returns
+    -------
+    nsadata
+        The data as an `astropy.io.fits` record array.
+    """
+    import os
+    from urllib2 import urlopen
+
+    from astropy.io import fits
+    from hosts import download_with_progress_updates
+
+    if fn is None:
+        fn = NSAFILENAME
+
+    if fn in _cachednsa:
+        if TELL_IF_USING_CACHED:
+            print('Using cached NSA for file', fn)
+        return _cachednsa[fn]
+
+    if os.path.exists(fn):
+        if TELL_IF_USING_CACHED:
+            print('Loading NSA from local file', fn)
+    else:
+        # download the file if it hasn't been already
+        NSAurl = 'http://sdss.physics.nyu.edu/mblanton/v0/' + NSAFILENAME
+
+        with open(fn, 'w') as fw:
+            msg = 'Downloading NSA from ' + NSAurl + ' to ' + fn
+            u = urlopen(NSAurl)
+            try:
+                download_with_progress_updates(u, fw, msg=msg)
+            finally:
+                u.close()
+
+    # use pyfits from astropy to load the data
+    res = fits.getdata(fn, 1)
+    _cachednsa[fn] = res
+
+    return res
+
+
+_cachedgama = {}
+def get_gama(fn=None):
+    """
+    Download or load the GAMA survey data
+
+    Parameters
+    ----------
+    fn : str or None
+        A file to load from or None to use the default.
+    Returns
+    -------
+    gamadata
+        The data as an astropy `Table`.  Table will also have `decmax`,
+        `decmin`, `ramax`, and `ramin`.
+    """
+    import os
+    from urllib2 import urlopen
+
+    from astropy.io import ascii
+    from hosts import download_with_progress_updates
+
+    if fn is None:
+        fn = os.path.join('catalogs', os.path.split(GAMA_URL)[-1])
+
+    if fn in _cachedgama:
+        #print('Using cached GAMA for file', fn)
+        return _cachedgama[fn]
+
+    if not os.path.exists(fn):
+        with open(fn, 'w') as fw:
+            msg = 'Downloading GAMA from ' + GAMA_URL + ' to ' + fn
+            u = urlopen(GAMA_URL)
+            try:
+                download_with_progress_updates(u, fw, msg=msg)
+            finally:
+                u.close()
+
+    tab = _cachedgama[fn] = ascii.read(fn, delimiter=',', guess=False)
+
+    tab.ramax = np.max(tab['RA_J2000'])
+    tab.ramin = np.min(tab['RA_J2000'])
+    tab.decmax = np.max(tab['DEC_J2000'])
+    tab.decmin = np.min(tab['DEC_J2000'])
+
+    return tab
+
+
+def construct_sdss_query(ra, dec, radius=1*u.deg, into=None, magcut=None,
+                         inclphotzs=False, applyphotflags=False):
+    """
+    Generates the query to send to the SDSS to get the full SDSS catalog around
+    a target.
+
+    Parameters
+    ----------
+    ra : `Quantity` or float
+        The center/host RA (in degrees if float)
+    dec : `Quantity` or float
+        The center/host Dec (in degrees if float)
+    radius : `Quantity` or float
+        The radius to search out to (in degrees if float)
+    into : str or None
+        The name of the table to construct in your `mydb` if you want to use
+        this with CasJobs, or None to have no "into" in the SQL. This also
+        adjust other parts of the query a little to work with CasJobs instead
+        of the direct query.
+    magcut : 2-tuple or None
+        if not None, adds a magnitude cutoff.  Should be a 2-tuple
+        ('magname', faintlimit). Ignored if None.
+    inclphotzs : bool
+        If True, includes a further join to add phot-zs where present
+    applyphotflags: bool
+        If True, the query will some basic photometric flags (see the code for
+        the exact flags)
+
+    Returns
+    -------
+    query : str
+        The SQL query to send to the SDSS skyserver
+
+
+    """
+    from textwrap import dedent
+
+
+
+    query_template = dedent("""
+    SELECT  p.objId  as objID,
+    p.ra, p.dec, p.type, p.flags, p.specObjID, dbo.fPhotoTypeN(p.type) as phot_sg,
+    p.modelMag_u as u, p.modelMag_g as g, p.modelMag_r as r,p.modelMag_i as i,p.modelMag_z as z,
+    p.modelMagErr_u as u_err, p.modelMagErr_g as g_err, p.modelMagErr_r as r_err,p.modelMagErr_i as i_err,p.modelMagErr_z as z_err,
+    p.psfMag_u as psf_u, p.psfMag_g as psf_g, p.psfMag_r as psf_r, p.psfMag_i as psf_i, p.psfMag_z as psf_z,
+    p.fibermag_r, p.fiber2mag_r,
+    p.petroMag_r + 2.5*log10(2*PI()*p.petroR50_r*p.petroR50_r) as sb_petro_r,
+    p.expMag_r, p.expMag_r + 2.5*log10(2*PI()*p.expRad_r*p.expRad_r + 1e-20) as sb_exp_r,
+    p.deVMag_r, p.deVMag_r + 2.5*log10(2*PI()*p.deVRad_r*p.deVRad_r + 1e-20) as sb_deV_r,
+    p.lnLExp_r, p.lnLDeV_r, p.lnLStar_r,
+    p.extinction_u as Au, p.extinction_g as Ag, p.extinction_r as Ar, p.extinction_i as Ai, p.extinction_z as Az,
+    ISNULL(s.z, -1) as spec_z, ISNULL(s.zErr, -1) as spec_z_err, ISNULL(s.zWarning, -1) as spec_z_warn, s.class as spec_class,
+    s.subclass as spec_subclass{photzdata}
+
+
+    {intostr}
+    FROM {funcprefix}fGetNearbyObjEq({ra}, {dec}, {radarcmin}) n, PhotoPrimary p
+    LEFT JOIN SpecObj s ON p.specObjID = s.specObjID
+    {photzjoins}WHERE n.objID = p.objID{magcutwhere}
+    {photflags}
+    """)
+    #if using casjobs, functions need 'dbo' in front of them for some reason
+    if into is None:
+        intostr = ''
+        funcprefix = 'dbo.'
+    else:
+        intostr = 'INTO MyDB.' + into
+        funcprefix = ''
+
+    intostr = '' if into is None else ('INTO MyDB.' + into)
+
+    if magcut is None:
+        magcutwhere = ''
+    else:
+        magcutwhere = ' and p.{0} < {1}'.format(*magcut)
+
+    if inclphotzs:
+        photzdata = ', ISNULL(pz.z,-1) as photz,ISNULL(pz.zerr,-1) as photz_err'
+        photzjoins = 'LEFT JOIN PhotoZ pz ON p.ObjID = pz.ObjID\n'
+    else:
+        photzdata = photzjoins = ''
+
+    if applyphotflags:
+        photflags = dedent("""
+        AND (flags & dbo.fPhotoFlags('BINNED1')) != 0
+        AND (flags & dbo.fPhotoFlags('SATURATED')) = 0
+        AND (flags & dbo.fPhotoFlags('BAD_COUNTS_ERROR')) = 0 -- "interpolation affected many pixels; PSF flux error is inaccurate and likely underestimated."
+        """[1:-1])
+        # these were considered, but found to sometimes remove *maybe* galaxies
+        #AND (flags & 0x8100000c00a0) == 0  -- not NOPROFILE, PEAKCENTER, NOTCHECKED, PSF_FLUX_INTERP, SATURATED, or BAD_COUNTS_ERROR
+        #AND ((flags & 0x400000000000) == 0)  | (psfmagerr_g <= 0.2)  --  DEBLEND_NOPEAK on faint ones
+    else:
+        photflags = ''
+
+    if isinstance(ra, float):
+        ra = ra*u.deg
+    ra = ra.to(u.deg).value
+
+    if isinstance(dec, float):
+        dec = dec*u.deg
+    dec = dec.to(u.deg).value
+
+    if isinstance(radius, float):
+        radius = radius*u.deg
+    radarcmin = radius.to(u.arcmin).value
+
+    # ``**locals()`` means "use the local variable names to fill the template"
+    return query_template.format(**locals())
+
+
+def construct_usnob_query(ra, dec, radius=1*u.deg, verbosity=1, votable=False, baseurl=USNOB_URL):
+    """
+    Generate a USNO-B query for the area around a target.
+
+    Parameters
+    ----------
+    ra : `Quantity` or float
+        The center/host RA (in degrees if float)
+    dec : `Quantity` or float
+        The center/host Dec (in degrees if float)
+    radius : `Quantity` or float
+        The radius to search out to (in degrees if float)
+    verbosity : int
+        The USNO verbosity level
+    votable : bool
+        If True, query gets a VOTable, otherwise ASCII
+
+    Returns
+    -------
+    url : str
+        The url to query to get the catalog.
+    """
+    from urllib import urlencode
+
+    if isinstance(ra, float):
+        ra = ra*u.deg
+    if isinstance(dec, float):
+        dec = dec*u.deg
+    if isinstance(radius, float):
+        radius = radius*u.deg
+
+    parameters = urlencode([('CAT', 'USNO-B1'),
+                            ('RA', ra.to(u.deg).value),
+                            ('DEC', dec.to(u.deg).value),
+                            ('SR', radius.to(u.deg).value),
+                            ('VERB', verbosity),
+                            ('cftype', 'XML/VO' if votable else 'ASCII'),
+                            ('slf', 'ddd.ddd/dd.ddd'),
+                            ('skey', 'Mag')])
+
+    return baseurl + '?' + parameters
+
+
+def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
+                   dlmsg='Downloading...', inclheader=True):
+    """
+    Runs the provided query on the given SDSS `url`, and either returns the
+    result or saves it as a file.
+
+    Parameters
+    ----------
+    query : str
+        The SQL query string.
+    fn : str or None
+        The filename to save the result to or None to return it from
+        this function.
+    sdssurl : str
+        The URL to send the query to - defaults to whatever
+        `SDSS_SQL_URL` is (defined at the top of this file)
+    format : str
+        The format to return the query.  As far as I know, SDSS only
+        accepts 'csv', 'xml', and 'html'
+    dlmsg : str or None
+        A string to print when the download begins.  If None, there will
+        also be no progress updates on the download.
+    inclheader : bool or str
+        Whether or not to include a header with information about the query
+        in the resulting file.  If a string, that will be at the end of the
+        header.
+
+    Returns
+    -------
+    result : str, optional
+        If `fn` is None, this will contain the result of the query.
+
+    Raises
+    ------
+    ValueError
+        If the SQL query results in an error or returns no rows
+
+    Notes
+    -----
+    This way of querying the SDSS has time and # of row limits - if
+    you exceed them you'll get an error and
+
+    """
+    import os
+    import urllib2
+    import datetime
+    from urllib import urlencode
+    from StringIO import StringIO
+
+    from hosts import download_with_progress_updates
+
+    parameterstr = urlencode([('cmd', query.strip()), ('format', format)])
+    url = sdssurl + '?' + parameterstr
+
+    #either open the requested file or a buffer to later return the values
+    if fn is None:
+        fw = StringIO()
+    else:
+        #make directories if needed
+        fndir = os.path.split(fn)[0]
+        if not os.path.isdir(fndir):
+            os.makedirs(fndir)
+        fw = open(fn, 'w')
+
+    try:
+        q = urllib2.urlopen(url)
+        try:
+            #first read the initial two lines to check for errors
+            firstline = q.readline()
+            secondline = q.readline()
+            if 'error' in firstline.lower() or 'error' in secondline.lower():
+                rest = q.read()
+                raise ValueError('SQL query returned an error:\n' + firstline +
+                                 secondline + rest)
+
+            if 'No objects have been found' == firstline:
+                raise ValueError('No objects were returned from the request!')
+
+            if inclheader:
+                dtstr = str(datetime.datetime.today())
+                fw.write('#Retrieved on {0} from {1}\n'.format(dtstr, sdssurl))
+                fw.write('#Query:\n#{0}\n'.format(query.strip().replace('\n', '\n#')))
+                if isinstance(inclheader, basestring):
+                    fw.write('#{0}\n'.format(inclheader.replace('\n', '\n#')))
+
+            fw.write(firstline)
+            fw.write(secondline)
+            if dlmsg is None:
+                fw.write(q.read())
+            else:
+                download_with_progress_updates(q, fw, msg=dlmsg)
+
+        finally:
+            q.close()
+
+        if fn is None:
+            # f should be a StringIO object, so we return its value
+            return fw.getvalue()
+    finally:
+        fw.close()
 
 def sdss_to_UBVRI(u, g, r, i, z):
     """
