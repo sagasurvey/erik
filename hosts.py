@@ -745,7 +745,7 @@ def get_gama(fn=None):
 
 
 def construct_sdss_query(ra, dec, radius=1*u.deg, into=None, magcut=None,
-                         inclphotzs=False, applyphotflags=False):
+                         inclphotzs=True, applyphotflags=False):
     """
     Generates the query to send to the SDSS to get the full SDSS catalog around
     a target.
