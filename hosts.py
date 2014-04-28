@@ -957,7 +957,7 @@ def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
     else:
         #make directories if needed
         fndir = os.path.split(fn)[0]
-        if not os.path.isdir(fndir):
+        if fndir and not os.path.isdir(fndir):
             os.makedirs(fndir)
         fw = open(fn, 'w')
 
