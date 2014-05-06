@@ -44,9 +44,11 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         Whether or not to include SDSS spectroscopic targets classified as QSOs
     removespecstars : bool
         Whether or not to ignore SDSS spectroscopic targets classified as stars
-    removegalsathighz : bool
+    removegalsathighz : bool or velocity Quantity
         Whether or not to ignore SDSS spectroscopic targets classified as
-        galaxies but with redshfits > 3*zerr +z_host
+        galaxies but with redshfits far from host.   Far means > 3*zerr +z_host
+        if this is a bool (and True), otherwise, the Quantity specifies the
+        velocity offest.
     removegama : str
         If not empty string/False, don't select targets that are already in
         GAMA.  Can be 'all' or 'now' to remove targets that will *eventually* be
@@ -77,6 +79,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         cat : astropy.table.Table
             The SDSS catalog with the selection applied
     """
+    from astropy.constants import c
     from astropy.table import Column, MaskedColumn
     from math import cos, radians
 
@@ -176,9 +179,14 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
 
     if removegalsathighz:
         gals = cat['spec_class'] == 'GALAXY'
-        #"high" z means more than 3sigma above the host's redshift
-        highzgals = gals & ((cat['spec_z']) > (host.zspec + 3 * host.zdisterr))
-        lowzgals = gals & ((cat['spec_z']) <= (host.zspec + 3 * host.zdisterr))
+        if (u.km/u.s).is_equivalent(removegalsathighz):
+            # take this to just mean it has to be within the given cutoff of the host
+            zthresh = (host.zspec + removegalsathighz/c).decompose().value
+        else:
+            #here,  "high" z means more than 3sigma above the host's redshift
+            zthresh = (host.zspec + 3 * host.zdisterr)
+        highzgals = gals & ((cat['spec_z']) > zthresh)
+        lowzgals = gals & ((cat['spec_z']) <= zthresh)
         print('Removing {0} objects at high z, keeping {1} (total of {2} objects)'.format(highzgals.sum(), lowzgals.sum(), len(lowzgals)))
         msk[highzgals] = False
 
