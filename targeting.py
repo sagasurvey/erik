@@ -480,3 +480,61 @@ Opt: <input class="in" type="text" value="" name="opt">
 </body>
 </html>
 """
+
+
+def sdss_IAU_id_to_ra_dec(sdssids, matchtocatalog=None):
+    """
+    Converts IAU SDSS identifiers (e.g.,"J151503.37+421253.9") to their RA/Decs
+
+    Returns an ICRS object if `matchtocatalog` is None, otherwise
+    `catalogidx, skysep`
+
+    """
+    import re
+    from astropy.coordinates import ICRS, Latitude, Longitude
+
+    rex = re.compile(r'J(\d{2})(\d{2})(\d{2}\.\d{2})'
+                     r'([+-])(\d{2})(\d{2})(\d{2}\.\d)')
+
+    if isinstance(sdssids, basestring):
+        sdssids = [sdssids]
+
+    ras = []
+    decs = []
+    for idi in sdssids:
+        res = rex.match(idi)
+        if res is None:
+            raise ValueError('Could not match ' + idi)
+        res = res.groups()
+        rah, ram, rasc = res[:3]
+        desgn, ded, dem, des = res[-4:]
+
+        ras.append(':'.join((rah, ram, rasc)))
+        decs.append(desgn + ':'.join((ded, dem, des)))
+
+    coords = ICRS(ra=Longitude(ras, u.hourangle), dec=Latitude(decs, u.degree))
+    if matchtocatalog:
+        if not hasattr(matchtocatalog, 'match_to_catalog_sky'):
+            matchtocatalog = ICRS(ra=np.array(matchtocatalog['ra'])*u.deg,
+                                  dec=np.array(matchtocatalog['dec'])*u.deg)
+        idx, sep, sep3d = coords.match_to_catalog_sky(matchtocatalog)
+        return idx, sep.to(u.arcsec)
+    else:
+        return coords
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
