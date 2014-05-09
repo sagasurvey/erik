@@ -18,13 +18,15 @@ SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss3.org/dr10/en/tools/chart/list.aspx'
 
 # the color cuts specified in the BOSSANOVA proposal
 bossanova_color_cuts = {'g-r': (None, 1.3), 'r-i': (None, 0.7)}
+# more stringent color cuts useful for prioritizing targeting
+tighter_color_cuts = {'g-r': (None, 1.0), 'r-i': (None, 0.5)}
 
 
 def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     galvsallcutoff=20, inclspecqsos=False, removespecstars=True,
     removegalsathighz=True, removegama='now', photflags=True,
     outercutrad=250, innercutrad=20, colorcuts={},
-    randomize=True, removeallsdss=False):
+    randomize=True, removeallsdss=False, fibermagcut=('r', 23)):
     """
     Selects targets from the SDSS catalog.
 
@@ -73,6 +75,9 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         Randomize the order of the catalog and the very end
     removeallsdss : bool
         If True, removes *all* SDSS spectra from the target selection
+    fibermagcut : None or 2-tuple
+        a 2-tuple ('band', mag) to remove objects with a fibermag fainter than
+        `mag`, or None to do nothing about this.
 
     Returns
     -------
@@ -217,7 +222,9 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
             msk = msk & ~gamamatchmsk
             print('Removing', np.sum(gamamatchmsk),'GAMA objects')
 
-
+    if fibermagcut:
+        fmagname = 'fibermag_' + fibermagcut[0]
+        msk = msk & (cat[fmagname] < fibermagcut[1])
 
     res = cat[msk]
     if randomize:
@@ -364,10 +371,12 @@ def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
 
     Parameters
     ----------
-    ras : array-like
-        RA of objects to be marked in degrees
-    decs : array-like
-        Dec of objects to be marked in degrees
+    ras : array-like or astropy.table.Table
+        RA of objects to be marked in degrees or a table with 'ra' and 'dec'
+        columnds if ``decs`` is None
+    decs : array-like or None
+        Dec of objects to be marked in degrees, or None if ``ras`` is to be
+        treated as a table
     n : int
         Maximum number of objects (randomly sampled if this is greater than
         `ras` or `decs` length)
@@ -393,6 +402,11 @@ def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
     import tempfile
     import time
     import os
+
+    if decs is None:
+        # assume it's a Table
+        decs = ras['dec']
+        ras = ras['ra']
 
     if len(ras) != len(decs):
         raise ValueError('ras and decs not the same size!')

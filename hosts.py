@@ -77,7 +77,7 @@ class NSAHost(object):
     this writing but could in theory change.  In that case the catalog should
     be pre-sorted or something
     """
-    def __init__(self, nsaid, name=None, environsradius=35*u.arcmin,
+    def __init__(self, nsaid, name=None, environsradius=300*u.kpc,
                  fnsdss=None, fnusnob=None, shortname=None):
         from os import path
         from astropy.coordinates import ICRS, Galactic
