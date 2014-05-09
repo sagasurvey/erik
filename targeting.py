@@ -493,8 +493,8 @@ def sdss_IAU_id_to_ra_dec(sdssids, matchtocatalog=None):
     import re
     from astropy.coordinates import ICRS, Latitude, Longitude
 
-    rex = re.compile(r'J(\d{2})(\d{2})(\d{2}\.\d{2})'
-                     r'([+-])(\d{2})(\d{2})(\d{2}\.\d)')
+    rex = re.compile(r'J(\d{2})(\d{2})(\d{2}\.\d{0,2})'
+                     r'([+-])(\d{2})(\d{2})(\d{2}\.\d{0,1})')
 
     if isinstance(sdssids, basestring):
         sdssids = [sdssids]
