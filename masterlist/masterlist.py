@@ -270,11 +270,12 @@ def simplify_catalog(mastercat, quickld=True):
     v_errs[~eddvhel.mask] = 0
     v_errs.mask[~eddvhel.mask] = True
 
-    #then the NSA, if available
-    vs[~mastercat['ZDIST'].mask] = mastercat['ZDIST'][~mastercat['ZDIST'].mask] * ckps
-    v_errs[~mastercat['ZDIST_ERR'].mask] = mastercat['ZDIST_ERR'][~mastercat['ZDIST_ERR'].mask] * ckps
+    #then the NSA *observed* velocity, if available (NOT the same as distance)
+    vs[~mastercat['Z'].mask] = mastercat['Z'][~mastercat['Z'].mask] * ckps
+    v_errs.mask[~mastercat['Z'].mask] = True
+    #v_errs[~mastercat['Z_ERR'].mask] = mastercat['Z_ERR'][~mastercat['Z_ERR'].mask] * ckps
 
-    #finally, KK when present
+    #finally, KK when present if its not available from one of the above
     kkvh = mastercat['Vh']
     vs[~kkvh.mask] = kkvh[~kkvh.mask]
     #KK has no v-errors, so mask them
@@ -282,26 +283,39 @@ def simplify_catalog(mastercat, quickld=True):
     v_errs.mask[~kkvh.mask] = True
 
     #DISTANCES
-    dist = mastercat['Dist_edd'].copy()
-    dist[~mastercat['Dist_kk'].mask] = mastercat['Dist_kk'][~mastercat['Dist_kk'].mask]
+    #start with all inf, and all masked
+    dist = np.ones_like(mastercat['Dist_edd']) * np.inf
+    dist.mask[:] = True
 
-    #for those *without* EDD or KK, use the redshift's luminosity distance
-    premsk = dist.mask.copy()
-    zs = vs[premsk]/ckps
-    if quickld:
-        ldx = np.linspace(zs.min(), zs.max(), 1000)
-        ldy = WMAP9.luminosity_distance(ldx).to(u.Mpc).value
-        ld = np.interp(zs, ldx, ldy)
-    else:
-        ld = WMAP9.luminosity_distance(zs).to(u.Mpc).value
+    #first populate those that are in EDD with CMD-based distance
+    msk = mastercat['So_eddkk']==1
+    dist[msk] = mastercat['Dist_edd'][msk]
 
-    dist[premsk] = ld
-    dist.mask[premsk] = vs.mask[premsk]
+    #now populate from the NSA if not in the above
+    msk = (dist.mask) & (~mastercat['ZDIST'].mask)
+    dist[msk] = mastercat['ZDIST'][msk] * ckps / WMAP9.H(0).value
+
+    #finally, add in anything in the KK that's not elsewhere
+    msk = (dist.mask) & (~mastercat['Dist_kk'].mask)
+    dist[msk] = mastercat['Dist_kk'][msk]
+
+    # #for those *without* EDD or KK, use the redshift's luminosity distance
+    # premsk = dist.mask.copy()
+    # zs = vs[premsk]/ckps
+    # if quickld:
+    #     ldx = np.linspace(zs.min(), zs.max(), 1000)
+    #     ldy = WMAP9.luminosity_distance(ldx).to(u.Mpc).value
+    #     ld = np.interp(zs, ldx, ldy)
+    # else:
+    #     ld = WMAP9.luminosity_distance(zs).to(u.Mpc).value
+    # dist[premsk] = ld
+    # dist.mask[premsk] = vs.mask[premsk]
 
     distmod = 5 * np.log10(dist) + 25  # used in phot section
 
     tab.add_column(table.MaskedColumn(name='vhelio', data=vs))
-    tab.add_column(table.MaskedColumn(name='vhelio_err', data=v_errs))
+    #decided to remove v-errors
+    #tab.add_column(table.MaskedColumn(name='vhelio_err', data=v_errs))
     tab.add_column(table.MaskedColumn(name='distance', data=dist, units=u.Mpc))
 
     #PHOTOMETRY
@@ -310,6 +324,7 @@ def simplify_catalog(mastercat, quickld=True):
     tab.add_column(table.MaskedColumn(name='z', data=mastercat['ABSMAG_z'] + distmod))
     tab.add_column(table.MaskedColumn(name='I', data=mastercat['it']))
     tab.add_column(table.MaskedColumn(name='K', data=mastercat['K_tc']))
+    tab.add_column(table.MaskedColumn(name='K_err', data=mastercat['e_K']))
 
     return tab
 
@@ -317,7 +332,9 @@ def simplify_catalog(mastercat, quickld=True):
 def manually_tweak_simplified_catalog(simplifiedcat):
     """
     This just updates a few entries in the catalog that seem to be missing
-    velocities for unclear reasons
+    velocities for unclear reasons.
+
+    No longer needed with `add_6df`: they are present.
     """
     from astropy.coordinates import ICRS
     from astropy.constants import c
@@ -379,9 +396,8 @@ def filter_catalog(mastercat, vcut, musthavenirphot=False):
     #filter anything without an RA or Dec
     msk = ~(mastercat['RA'].mask | mastercat['Dec'].mask)
 
-    #also remove everything without a distance - this includes all w/velocities,
-    #because for those the distance comes from assuming hubble flow
-    msk = msk & (~mastercat['distance'].mask)
+    #also remove everything with neither a distance nor a velocity
+    msk = msk & ~(mastercat['distance'].mask&mastercat['vhelio'].mask)
 
 
     # remove everything that has a velocity > `vcut`
@@ -415,14 +431,20 @@ def add_twomassxsc(mastercat, twomassxsc, tol=3*u.arcmin, copymastercat=False):
     if copymastercat:
         mastercat = mastercat.copy()
     mK = mastercat['K']
+    mK_err = mastercat['K_err']
 
-    premask = mK.mask.copy() # those that *do* have a K-band mag from the 2MRS/EDD
+    premask = mK.mask.copy() # the mask for having a K-band mag from the 2MRS/EDD
 
     #Sets those that are not in 2MRS/EDD to have the K-band total mag from the XSC
     mK[premask] = twomassxsc['k_m_ext'][idx][premask]
-    #now masks those of the above that are not within tol
+    mK_err[premask] = twomassxsc['k_msig_ext'][idx][premask]
+
+    #now mask those of the above that are not within tol
     mK.mask[~matches] = True
-    mK.mask[~premask] = False  # fix it up so that those with 2MRS/EDD values are not masked
+    mK_err.mask[~matches] = True
+    # fix it up so that those with 2MRS/EDD values are not masked
+    mK.mask[~premask] = False
+    mK_err.mask[~premask] = False
 
     return mastercat
 
@@ -452,7 +474,7 @@ def add_6df(simplifiedmastercat, sixdf, tol=1*u.arcmin):
     t.add_column(table.MaskedColumn(name='NSAID', data=-np.ones(len(sixdfnomatch), dtype=int), mask=np.ones(len(sixdfnomatch), dtype=bool)))
     t.add_column(table.MaskedColumn(name='othername', data=sixdfnomatch['targetname']))
     t.add_column(table.MaskedColumn(name='vhelio', data=sixdfnomatch['z_helio']*ckps))
-    t.add_column(table.MaskedColumn(name='vhelio_err', data=sixdfnomatch['zfinalerr']*ckps))
+    #t.add_column(table.MaskedColumn(name='vhelio_err', data=sixdfnomatch['zfinalerr']*ckps))
     t.add_column(table.MaskedColumn(name='distance', data=WMAP9.luminosity_distance(sixdfnomatch['z_helio']).value))
 
     #fill in anything else needed with -999 and masked
@@ -482,7 +504,7 @@ def load_master_catalog(fn='mastercat.dat'):
     return ascii.read(fn, delimiter=',')
 
 
-def x_match_tests(cattomatch, tol=1*u.arcmin, vcuts=None):
+def x_match_tests(cattomatch, tol=1*u.arcmin, vcuts=None, basedir='.'):
     """
     Does a bunch of cross-matches with other catalogs. `cattomatch` must be an
     `ICRS` object or a table.
@@ -499,6 +521,8 @@ def x_match_tests(cattomatch, tol=1*u.arcmin, vcuts=None):
     atlas3d_* are from Marla from somewhere...
     zcat.fits is from vizier's ZCAT copy
     """
+    from os.path import join
+
     import RC3
     from astropy.io import ascii, fits
     from astropy.coordinates import ICRS
@@ -517,22 +541,22 @@ def x_match_tests(cattomatch, tol=1*u.arcmin, vcuts=None):
         rc3wv = rc3wv[msk]
         rc3wv_coo = rc3wv_coo[msk]
 
-    a3de = ascii.read('atlas3d_e.dat', data_start=3, format='fixed_width')
-    a3dsp = ascii.read('atlas3d_sp.dat', data_start=3, format='fixed_width')
+    a3de = ascii.read(join(basedir,'atlas3d_e.dat'), data_start=3, format='fixed_width')
+    a3dsp = ascii.read(join(basedir,'atlas3d_sp.dat'), data_start=3, format='fixed_width')
     a3de_coo = ICRS(u.deg*a3de['RA'], u.deg*a3de['DEC'])
     a3dsp_coo = ICRS(u.deg*a3dsp['RA'], u.deg*a3dsp['DEC'])
 
-    nsah = ascii.read('hosts.dat')
+    nsah = ascii.read(join(basedir,'hosts.dat'))
     nsah_coo = ICRS(u.hourangle*nsah['RA'], u.deg*nsah['DEC'])
 
-    sixdf = ascii.read('6dF.csv',guess=False,delimiter=',')
+    sixdf = ascii.read(join(basedir,'6dF.csv'),guess=False,delimiter=',')
     sixdf_coo = ICRS(u.deg*sixdf['obsra'], u.deg*sixdf['obsdec'])
     if vcuts:
         msk = sixdf['z_helio'] < (vcuts/c).decompose().value
         sixdf = sixdf[msk]
         sixdf_coo = sixdf_coo[msk]
 
-    zcat = fits.getdata('zcat.fits')
+    zcat = fits.getdata(join(basedir,'zcat.fits'))
     zcat_coo = ICRS(u.deg*zcat['_RAJ2000'], u.deg*zcat['_DEJ2000'])
     if vcuts:
         msk = (zcat['Vh'] < (vcuts).to(u.km/u.s).value)
@@ -573,35 +597,35 @@ def x_match_tests(cattomatch, tol=1*u.arcmin, vcuts=None):
     return dct
 
 
-if __name__ == '__main__':
-    import argparse
+def main(outfn, quiet=False, catalogdir='.'):
+    from os.path import join
 
-    p = argparse.ArgumentParser()
-    p.add_argument('-q', '--quiet', action='store_true')
-    p.add_argument('outfn', nargs='?', help="If this is not given, the catalog won't be saved", default=None)
-    args = p.parse_args()
-
-    if args.quiet:
+    if quiet:
         #silences the print function
         print = lambda s: None
+    else:  # needed because above converts it to a local var
+        import __builtin__
+        print = __builtin__.print
+        del __builtin__  # so it doesn't get passed in the return statement
 
     print("Loading LEDA catalog...")
-    leda = load_edd_csv('LEDA.csv')
+    leda = load_edd_csv(join(catalogdir,'LEDA.csv'))
     print("Loading 2MRS catalog...")
-    twomass = load_edd_csv('2MRS.csv')
+    twomass = load_edd_csv(join(catalogdir,'2MRS.csv'))
     print("Loading EDD catalog...")
-    edd = load_edd_csv('EDD.csv')
+    edd = load_edd_csv(join(catalogdir,'EDD.csv'))
     print("Loading KK nearby catalog...")
-    kknearby = load_edd_csv('KKnearbygal.csv')
+    kknearby = load_edd_csv(join(catalogdir,'KKnearbygal.csv'))
     nsa = load_nsa()
     print('Loading 6dF...')
     #6dF is not an EDD catalog, but happens to be the same format
-    sixdf = load_edd_csv('6dF.csv')
+    sixdf = load_edd_csv(join(catalogdir,'6dF.csv'))
 
-    if os.path.exists('2mass_xsc_irsa.tab'):
+    if os.path.exists(join(catalogdir,'2mass_xsc_irsa.tab')):
         print("Loading 2MASS XSC...")
-        twomassxsc = load_2mass_xsc('2mass_xsc_irsa.tab')
+        twomassxsc = load_2mass_xsc(join(catalogdir,'2mass_xsc_irsa.tab'))
     else:
+        print("Could not find 2MASS XSC file.")
         twomassxsc = None
 
     #these variables are just for convinience in interactive work
@@ -624,12 +648,24 @@ if __name__ == '__main__':
     else:
         print("You don't have a copy of the 2MASS XSC, so the fraction with K-band mags will be lower")
 
-    if args.outfn is not None:
-        print('Writing master catalog to {args.outfn}...'.format(**locals()))
+    if outfn is not None:
+        print('Writing master catalog to {outfn}...'.format(**locals()))
 
         oldmpo = str(np.ma.masked_print_option)
         try:
             np.ma.masked_print_option.set_display('')
-            mastercat.write(args.outfn, format='ascii', delimiter=',')
+            mastercat.write(outfn, format='ascii', delimiter=',')
         finally:
             np.ma.masked_print_option.set_display(oldmpo)
+
+    return locals()  # so that it can be in an ipython session
+
+if __name__ == '__main__':
+    import argparse
+
+    p = argparse.ArgumentParser()
+    p.add_argument('-q', '--quiet', action='store_true')
+    p.add_argument('outfn', nargs='?', help="If this is not given, the catalog won't be saved", default=None)
+    args = p.parse_args()
+
+    locals().update(main(**args.__dict__))
