@@ -137,7 +137,7 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
                 '--\t---\t------\t----\t----\t---']
 
     #entries for the actual targets
-    print 'Inlcuding', len(targs), 'targets'
+    print 'Including', len(targs), 'targets'
     for i, (t, rank) in enumerate(zip(targs, targetranks)):
         rastr = Angle(t['ra'], 'deg').format('hr', sep=':', precision=3)
         decstr = Angle(t['dec'], 'deg').format('deg', sep=':', precision=3)
