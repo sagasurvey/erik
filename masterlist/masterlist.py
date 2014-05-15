@@ -104,6 +104,7 @@ import numpy as np
 
 from astropy import units as u
 from astropy.cosmology import WMAP9  # for Z->distances
+from astropy import table
 
 
 def load_edd_csv(fn):
@@ -171,10 +172,11 @@ def load_nsa(fn='nsa_v0_1_2.fits', verbose=False):
     return newtab
 
 
-def generate_catalog(leda, twomass, edd, kknearby, nsa, matchtolerance=1*u.arcmin):
-    from astropy import table
-    from astropy.coordinates import ICRS
-
+def initial_catalog(leda, twomass, edd, kknearby):
+    """
+    `matchtolerance` is how close an NSA object needs to be to be counted as
+    having that PGC#. `removeduplicatepgcson`   something needs to be to be included in the
+    """
     #first join the small ones, because they both have "dist" columns
     small = table.join(edd, kknearby, keys=['pgc'], table_names=['edd', 'kk'], join_type='outer')
 
@@ -184,25 +186,77 @@ def generate_catalog(leda, twomass, edd, kknearby, nsa, matchtolerance=1*u.arcmi
 
     #add in the 2mass stuff
     #call the first one "eddkk" because the shared columns are all either in the EDD or KK
-    ledaj2 = table.join(ledaj, twomass, keys=['pgc'], table_names=['eddkk', '2mass'], join_type='outer')
+    return table.join(ledaj, twomass, keys=['pgc'], table_names=['eddkk', '2mass'], join_type='outer')
 
-    #now cross-match with NSA - need to match on RA/Dec because no PGC #s in NSA
-    ral, decl = ledaj2['al2000'], ledaj2['de2000']
+
+def add_nsa(mastercat, nsa=None, matchtolerance=10*u.arcsec,
+            removeduplicatepgcson='ABSMAG_r'):
+    """
+    Parameters
+    ----------
+    mastercat
+        Output from `initial_catalog`
+    nsa
+        Output from `load_nsa`
+    matchtolerance : `Angle`
+        The distance out to look for matches when assigning PGC#s to NSA objects
+    removeduplicatepgcson : str or None
+        If not None, specifies what to use to remove multiple PGC #s: can be an
+        entry in the NSA catalog, in which case the smallest of those (brightest
+        mag) will be selected as the one object, or it can be 'closest' to just
+        pick the closest to the PGC coordinates.
+    """
+    from astropy.coordinates import ICRS
+
+    if nsa is None:
+        nsa = load_nsa()
+
+    #cross-match with NSA - need to match on RA/Dec because no PGC #s in NSA
+    ral, decl = mastercat['al2000'], mastercat['de2000']
     lmsk = (~ral.mask) & (~decl.mask)
     lcoo = ICRS(u.hour * ral[lmsk], u.degree * decl[lmsk])
     nsacoo = ICRS(u.degree * nsa['RA'], u.degree * nsa['DEC'])
 
     idx, dd, dd3d = nsacoo.match_to_catalog_sky(lcoo)
-    matchpgc = -np.ones(len(idx), dtype=int)  # non-matches get -1
     dmsk = dd < matchtolerance  # only match those with a closest neighbor w/i tol
-    matchpgc[dmsk] = ledaj2['pgc'][lmsk][idx[dmsk]]
 
+    matchpgc = np.zeros(len(idx), dtype=int)  # non-matches get 0
+    matchpgc[dmsk] = mastercat['pgc'][lmsk][idx[dmsk]]
+
+    if removeduplicatepgcson:
+        #now search for multiple pgc numbers that are the same
+        if removeduplicatepgcson == 'closest':
+            dupval = dd
+        else:
+            dupval = nsa[removeduplicatepgcson]
+
+        # those w/ dupes
+        multipgcs = np.where(np.bincount(matchpgc) > 1)[0]
+        for i, n in enumerate(multipgcs):
+            matchmsk = matchpgc == n
+            idxs = np.where(matchmsk)[0]
+            bestidx = idxs[np.argmin(dupval[matchmsk])]
+            matchpgc[idxs] = 0
+            matchpgc[bestidx] = n
+
+
+
+    # set non-matches to -1
+    matchpgc[matchpgc==0] -= 1
+
+    #add the pgc number to the catalog
     if 'pgc' in nsa.colnames:
         nsa['pgc'] = matchpgc
     else:
         nsa.add_column(table.Column(name='pgc', data=matchpgc))
+    # also add the match distance for diagnostics
+    if 'pgc_match_dist_asec' in nsa.colnames:
+        nsa['pgc_match_dist_asec'] = dd.to(u.arcsec)
+    else:
+        nsa.add_column(table.Column(name='pgc_match_dist_asec', data=dd.to(u.arcsec)))
 
-    return table.join(ledaj2, nsa, keys=['pgc'], table_names=['leda', 'nsa'], join_type='outer')
+    return table.join(mastercat, nsa, keys=['pgc'], table_names=['leda', 'nsa'], join_type='outer')
+
 
 
 def simplify_catalog(mastercat, quickld=True):
@@ -213,7 +267,7 @@ def simplify_catalog(mastercat, quickld=True):
     Parameters
     ----------
     mastercat : astropy.table.Table
-        The table from generate_catalog
+        The table from initial_catalog
     quickld : bool
         If True, means do the "quick" version of the luminosity distance
         calculation (takes <1 sec as opposed to a min or so, but is only good
@@ -381,7 +435,7 @@ def filter_catalog(mastercat, vcut, musthavenirphot=False):
     Parameters
     ----------
     mastercat : Table
-        A table like that output from `generate_catalog`
+        A table like that output from `initial_catalog`
     vcut : `astropy.units.Quantity` with velocity units
         The cutoff velocity to filter
     musthavenirphot : bool
@@ -629,11 +683,12 @@ def main(outfn, quiet=False, catalogdir='.'):
         twomassxsc = None
 
     #these variables are just for convinience in interactive work
-    cats = [leda, twomass, edd, kknearby, nsa]
     eddcats = [leda, twomass, edd, kknearby]
 
-    print('Generating master catalog...')
-    mastercat0 = generate_catalog(*cats)
+    print('Generating initial catalog from EDD...')
+    mastercat0nonsa = initial_catalog(*eddcats)
+    print('Adding NSA...')
+    mastercat0 = add_nsa(mastercat0nonsa, nsa)
     print('Simplifying master catalog...')
     mastercat1 = simplify_catalog(mastercat0)
     #mastercat1 = manually_tweak_simplified_catalog(mastercat1)
