@@ -252,7 +252,7 @@ class NSAHost(object):
         E.g., ``physical_to_projected(30*u.arcmin)``
         """
         if u.kpc.is_equivalent(dist):
-            dist = dist.to(u.mpc).value
+            dist = dist.to(u.Mpc).value
         else:
             raise ValueError('need to give physical_to_projected a Quantity.')
 
@@ -283,9 +283,10 @@ class NSAHost(object):
 
         Parameters
         ----------
-        dl : bool
+        dl : bool or str
             If True, download the catalog to `fnsdss`.  Otherwise, just
-            return the query.
+            return the query.  If 'overwrite', will overwrite `fnsdss` even if
+            it already exists.
         usecas : bool
             If True, includes an `INTO` in the SQL for use with casjobs.
             Ignored if `dl` is True
@@ -324,8 +325,11 @@ class NSAHost(object):
             altfns.extend(self.altfnsdss)
             for fn in altfns:
                 if exists(fn):
-                    print('File', fn, 'exists - not downloading anything.')
-                    break
+                    if dl == 'overwrite':
+                        print('File', fn, 'exists, overwriting with new download.')
+                    else:
+                        print('File', fn, 'exists - not downloading anything.')
+                        break
             else:
                 msg = 'Downloading NSA ID{0} to {1}'.format(self.nsaid, self.fnsdss)
                 download_sdss_query(query, fn=self.fnsdss, dlmsg=msg,

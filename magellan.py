@@ -325,10 +325,13 @@ def get_smf_entries(fn, inclholes=False):
     return names, radegs, decdegs
 
 
-def plot_imacs_masks(host, clf=True, save=False, eastleft=False):
+def plot_imacs_masks(host, clf=True, save=False, eastleft=False, altname=None,
+                     skipnums=[]):
     from glob import glob
 
     smfs = glob('imacs_targets/{0}_*.SMF'.format(host.shortname))
+    if altname:
+        smfs.extend(glob('imacs_targets/{0}_*.SMF'.format(altname)))
     smfs = dict([(int(smf.split('_')[-1].split('.')[0]), smf) for smf in smfs])
     smfs = [smfs[i] for i in sorted(smfs)]
     print(smfs)
@@ -347,11 +350,17 @@ def plot_imacs_masks(host, clf=True, save=False, eastleft=False):
                 decs.append(float(dec))
     plt.plot(ras, decs, '.k', label='All', ms=1, alpha=.6)
 
+    n = 0
     for fn in smfs:
         msknum = int(fn.split('_')[-1].split('.')[0])
+        if msknum in skipnums:
+            continue
         nmi, rai, deci = get_smf_entries(fn)
 
         plt.plot(rai, deci, '.', ms=5, alpha=.8, label=str(msknum))
+
+        n += len(rai)
+    print('Total targets=', n)
 
     plt.xlabel('RA [deg]')
     plt.ylabel('Dec [deg]')
