@@ -774,13 +774,73 @@ def cross_id_w_sdss(mastercat, searchrad=30*u.arcsec, limitto=None,
         print("Cross-ID didn't return a valid table.  Returning the request instead so errors can be diagnosed.")
         return req
 
+REMOVE_LIST_URLS = {'master': 'http://docs.google.com/spreadsheets/d/1Y3nO7VyU4jDiBPawCs8wJQt2s_PIAKRj-HSrmcWeQZo/export?format=csv&gid=0',
+                    'host':'http://docs.google.com/spreadsheets/d/1Y3nO7VyU4jDiBPawCs8wJQt2s_PIAKRj-HSrmcWeQZo/export?format=csv&gid=1133875164',
+                    'target':'http://docs.google.com/spreadsheets/d/1Y3nO7VyU4jDiBPawCs8wJQt2s_PIAKRj-HSrmcWeQZo/export?format=csv&gid=1379081675'}
 
+def remove_from_list(lst, toremove, tol=0.03*u.arcsec):
+    """
+    This uses the "remove list" google docs to remove objects from a list like
+    the master list.
+
+    Parameters
+    ----------
+    lst : Table
+        A mastercat-like table. (Must have 'RA' and 'Dec' fields)
+    toremove : str
+        A file name to use as the remove list, or one of 'master', 'host',
+        or 'target' to download the remove list from the relevant SAGA google
+        spreadsheet. (Note that this will only work if the spreadsheet has
+        "Anyone who has the link can view" sharing set up.)
+    tol : Angle-like Quantity
+        How close the matches must be
+
+    Returns
+    -------
+    filteredlst : Table
+        `lst` without the entries that are supposed to be removed
+    """
+    import requests
+
+    from astropy.io import ascii
+    from astropy.coordinates import ICRS
+
+    csvurl = REMOVE_LIST_URLS.get(toremove, None)
+
+    if csvurl is None:
+        with open(toremove) as f:
+            f.readline()  # first line is the description of the list
+            csv = f.read()
+    else:
+        res = requests.get(csvurl)
+        csv = res.content.split('\n')[1:]
+        res.close()  # not necessarily required, but may as well
+        if '<!DOCTYPE html>' in csv:
+            raise ValueError("The attempt to download a csv yielded a web site."
+                             " This probably means the spreadsheed isn't "
+                             "publicly accessible.")
+
+    removelst = ascii.read(csv)
+
+    removecoo = ICRS(removelst['RA']*u.deg, removelst['DEC']*u.deg)
+    lstcoo = ICRS(lst['RA']*u.deg, lst['Dec']*u.deg)
+
+    idx, d2d, d3d = removecoo.match_to_catalog_sky(lstcoo)
+    nomtch = d2d > tol
+    if np.sum(nomtch) > 0:
+        msg = 'Could not find matches for removelist indecies {0}.  Distance: {1}'
+        raise ValueError(msg.format(np.where(nomtch)[0], d2d[nomtch].to(u.arcsec)))
+
+    msk = np.ones(len(lst), dtype=bool)
+    msk[idx] = False
+
+    return lst[msk]
 
 
 
 
 def main(outfn, quiet=False, catalogdir='.'):
-    from os.path import join
+    from os.path import join, exists
 
     if quiet:
         #silences the print function
@@ -824,6 +884,16 @@ def main(outfn, quiet=False, catalogdir='.'):
     mastercat2 = add_6df(mastercat1, sixdf)
     print('Filtering master catalog...')
     mastercat = filter_catalog(mastercat2, vcut=4000*u.km/u.s)
+
+    print('Removing objects in master remove list')
+    preremcount = len(mastercat)
+    if exists('MasterRemove.csv'):
+        print('Using local MasterRemove.csv file')
+        mastercat = remove_from_list(mastercat, 'MasterRemove.csv')
+    else:
+        print('Using master remove list from the internet/google spreadsheet')
+        mastercat = remove_from_list(mastercat, 'master')
+    print('Remove list removed', preremcount - len(mastercat), 'objects')
 
     if twomassxsc:
         print('Supplementing with 2MASS XSC K mags')
