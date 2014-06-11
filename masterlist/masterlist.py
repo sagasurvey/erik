@@ -99,6 +99,7 @@ you'll need to get it from IRSA with the following procedure:
 from __future__ import division, print_function
 
 import os
+import sys
 
 import numpy as np
 
@@ -282,7 +283,7 @@ def simplify_catalog(mastercat, quickld=True):
     tab = table.Table()
 
     #RADEC:
-    # start with LEDA, then if missing add
+    # use NSA unless it's missing, in which case use LEDA
     ras = mastercat['al2000']*15
     ras[~mastercat['RA'].mask] = mastercat['RA'][~mastercat['RA'].mask]
     decs = mastercat['de2000']
@@ -649,6 +650,133 @@ def x_match_tests(cattomatch, tol=1*u.arcmin, vcuts=None, basedir='.'):
         dct[nm+'_nomatch'] = (locals()[nm])[locals()[nm + '_nomatch']]
         dct[nm+'_catidx'] = (locals()[nm+'_idx'])
     return dct
+
+def cross_id_w_sdss(mastercat, searchrad=30*u.arcsec, limitto=None,
+                    qryfields=['objid', 'ra', 'dec', 'type'],
+                    cidurl='http://skyserver.sdss3.org/dr10/en/tools/crossid/x_crossid.aspx',
+                    chunk=0, nretrychunk=1):
+    """
+
+    Parameters
+    ----------
+    mastercat : Table
+        A *simplified* mastercat (e.g., has to have 'RA' and 'Dec' decimal
+        degree fields)
+    searchrad : Quantity
+        The search radius (as the SDSS crossid tool accepts it)
+    limitto : int or slice or None
+        The maximum number of mastercat entries to include.  If a slice, it
+        grabs the relevant slice from the catalog
+    url : str
+        The URL of the SDSS cross-id tool for the DR you want to check
+    chunk : int
+        Splits the query up into sub-queries of size ``chunk``. If 0, just does
+        the whole query.  Using this replaces `limitto`.
+    nretrychunk : int
+        How many times to try a chunk again before giving up (the cross-ID
+        service seems to have transient faults)
+
+
+    Returns
+    -------
+    crossid_result : Table
+        The response from the SDSS cross-id service
+    """
+    import requests
+    from astropy.io import ascii
+
+    #take the chunk code here *instead* of the real function, because it returns
+    if chunk>0:
+        start = 0
+        end = chunk
+        ntries = 0
+        tabs = []
+
+        while start < len(mastercat):
+            print('On chunk starting with', start, 'of', len(mastercat))
+            sys.stdout.flush()
+
+            tab = cross_id_w_sdss(mastercat, searchrad, slice(start, end),
+                                  qryfields, cidurl, 0)
+
+            if not isinstance(tab, table.Table):
+                if ntries < nretrychunk:
+                    ntries += 1
+                    print('Failed, but retrying. {0} more tries after this.'.format(nretrychunk - ntries))
+                else:
+                    if nretrychunk:
+                        print ('Failed too many times - giving up.')
+                    return tab
+            else:
+                #success
+                tabs.append(tab)
+                start += chunk
+                end += chunk
+                ntries = 0
+
+        return table.vstack(tabs)
+
+    #after this is the no-chunk code
+
+    qrytempl="""
+    SELECT
+       {selectstatement}
+
+    FROM #upload u
+          JOIN #x x ON x.up_id = u.up_id
+          JOIN PhotoTag p ON p.objID = x.objID
+
+    ORDER BY x.up_id
+    """[1:-1]
+    from os import devnull
+
+    selectstatement = []
+    for field in qryfields:
+        if field == 'type':
+            selectstatement.append('dbo.fPhotoTypeN(p.type) as type')
+        elif field.startswith('up_'):
+            selectstatement.append('u.' + field)
+        else:
+            selectstatement.append('p.' + field)
+    selectstatement = ', '.join(selectstatement)
+
+    qry = qrytempl.format(**locals())
+
+    if not isinstance(limitto, slice):
+        limitto = slice(limitto)
+
+    upload_list_lines = ['name ra dec']
+
+    loopelems = list(enumerate(zip(mastercat['RA'], mastercat['Dec'])))
+    for i, (ra, dec) in loopelems[limitto]:
+        upload_list_lines.append('{0} {1:.4f} {2:.4f}'.format(i, ra, dec))
+    upload_list = '\n'.join(upload_list_lines)
+
+    postdct = dict(searchType=('', 'photo', '', {}),
+                   photoScope=('', 'nearPrim', '', {}),
+                   photoUpType=('', 'ra-dec', '', {}),
+                   radius=('', '{0:.1f}'.format(searchrad.to(u.arcmin).value)),
+                   firstcol=('', '1', '', {}),
+                   paste=('', upload_list, '', {}),
+                   uquery=('', qry, '', {}),
+                   format=('', 'csv', '', {}),
+                   upload=('', '', 'application/octet-stream', {})
+                  )
+
+    req = requests.post(cidurl, files=postdct)
+    result = req.text
+
+    try:
+        tab = ascii.read(result, guess=False, delimiter=',')
+        tab['name'].name = 'mastercat_idx'
+        return tab
+    except ascii.InconsistentTableError:
+        print("Cross-ID didn't return a valid table.  Returning the request instead so errors can be diagnosed.")
+        return req
+
+
+
+
 
 
 def main(outfn, quiet=False, catalogdir='.'):
