@@ -837,8 +837,6 @@ def remove_from_list(lst, toremove, tol=0.03*u.arcsec):
     return lst[msk]
 
 
-
-
 def main(outfn, quiet=False, catalogdir='.'):
     from os.path import join, exists
 
@@ -883,17 +881,16 @@ def main(outfn, quiet=False, catalogdir='.'):
     print('Adding 6df to master catalog...')
     mastercat2 = add_6df(mastercat1, sixdf)
     print('Filtering master catalog...')
-    mastercat = filter_catalog(mastercat2, vcut=4000*u.km/u.s)
+    mastercatprerem = filter_catalog(mastercat2, vcut=4000*u.km/u.s)
 
     print('Removing objects in master remove list')
-    preremcount = len(mastercat)
     if exists('MasterRemove.csv'):
         print('Using local MasterRemove.csv file')
-        mastercat = remove_from_list(mastercat, 'MasterRemove.csv')
+        mastercat = remove_from_list(mastercatprerem, 'MasterRemove.csv')
     else:
         print('Using master remove list from the internet/google spreadsheet')
-        mastercat = remove_from_list(mastercat, 'master')
-    print('Remove list removed', preremcount - len(mastercat), 'objects')
+        mastercat = remove_from_list(mastercatprerem, 'master')
+    print('Remove list removed', len(mastercatprerem) - len(mastercat), 'objects')
 
     if twomassxsc:
         print('Supplementing with 2MASS XSC K mags')
