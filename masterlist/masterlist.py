@@ -778,7 +778,7 @@ REMOVE_LIST_URLS = {'master': 'http://docs.google.com/spreadsheets/d/1Y3nO7VyU4j
                     'host':'http://docs.google.com/spreadsheets/d/1Y3nO7VyU4jDiBPawCs8wJQt2s_PIAKRj-HSrmcWeQZo/export?format=csv&gid=1133875164',
                     'target':'http://docs.google.com/spreadsheets/d/1Y3nO7VyU4jDiBPawCs8wJQt2s_PIAKRj-HSrmcWeQZo/export?format=csv&gid=1379081675'}
 
-def remove_from_list(lst, toremove, tol=0.03*u.arcsec):
+def remove_from_list(lst, toremove, tol=0.03*u.arcsec, erroronnomatch=True):
     """
     This uses the "remove list" google docs to remove objects from a list like
     the master list.
@@ -794,6 +794,9 @@ def remove_from_list(lst, toremove, tol=0.03*u.arcsec):
         "Anyone who has the link can view" sharing set up.)
     tol : Angle-like Quantity
         How close the matches must be
+    erroronnomatch : bool
+        If True, raise an error if a match isn't found within ``tol``, otherwise
+        just print a warning.
 
     Returns
     -------
@@ -829,8 +832,11 @@ def remove_from_list(lst, toremove, tol=0.03*u.arcsec):
     nomtch = d2d > tol
     if np.sum(nomtch) > 0:
         msg = 'Could not find matches for removelist indecies {0}.  Distance: {1}'
-        raise ValueError(msg.format(np.where(nomtch)[0], d2d[nomtch].to(u.arcsec)))
-
+        msg = msg.format(np.where(nomtch)[0], d2d[nomtch].to(u.arcsec))
+        if erroronnomatch:
+            raise ValueError(msg)
+        else:
+            print(msg + ', continuing anyway...')
     msk = np.ones(len(lst), dtype=bool)
     msk[idx] = False
 
