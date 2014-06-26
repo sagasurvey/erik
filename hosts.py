@@ -1084,8 +1084,13 @@ def get_saga_hosts_from_google(googleusername, googlepasswd=None):
     s = ss.get_worksheet(0)  # first worksheet
 
     col1 = s.col_values(1)
-    startrow = col1.index('SAGA Name') + 1
-    endrow = [i for i, v in enumerate(col1) if v is not None and v.startswith('these systems are currently deprecated')][0] + 1
+    startrow = col1.index('SAGA Name') + 2
+    endrow = startrow
+    for v in col1[(startrow-1):]:
+        endrow += 1
+        if v.strip() == '':
+            #we've hit the end
+            break
 
     rowvals = [s.row_values(row) for row in range(startrow, endrow)]
 
@@ -1098,7 +1103,7 @@ def get_saga_hosts_from_google(googleusername, googlepasswd=None):
         nsastr = 'NSA' + str(nsanum)
         ngcstr = 'NGC' + r[1]
 
-        hosts.append(NSAHost(nsanum, [ngcstr, nsastr]))
+        hosts.append(NSAHost(nsanum, [sysname, ngcstr]))
 
     return hosts
 
