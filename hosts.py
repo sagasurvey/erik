@@ -1060,7 +1060,8 @@ def get_saga_hosts():
 
 def get_saga_hosts_from_google(googleusername, googlepasswd=None):
     """
-    Returns a lost of hosts obtained from querying the google spreadsheet (right now, only NSA hosts)
+    Returns a lost of hosts obtained from querying the google spreadsheet
+    "SAGA_Hosts+Satellites".  Currently only works for NSA hosts
 
     Parameters
     ----------
@@ -1079,11 +1080,11 @@ def get_saga_hosts_from_google(googleusername, googlepasswd=None):
 
     c = gspread.Client(auth=(googleusername, googlepasswd))
     c.login()
-    ss = c.open('SAGA Observing Summary')
+    ss = c.open('SAGA_Hosts+Satellites')
     s = ss.get_worksheet(0)  # first worksheet
 
     col1 = s.col_values(1)
-    startrow = col1.index('Summary of Observed Systems') + 3
+    startrow = col1.index('SAGA Name') + 1
     endrow = [i for i, v in enumerate(col1) if v is not None and v.startswith('these systems are currently deprecated')][0] + 1
 
     rowvals = [s.row_values(row) for row in range(startrow, endrow)]
@@ -1091,28 +1092,15 @@ def get_saga_hosts_from_google(googleusername, googlepasswd=None):
     hosts = []
     for r in rowvals:
         sysname = r[0]
-        othernames = [nm.replace(' ', '') for nm in r[1].split(',')]
+        if not r[2].strip():
+            print('Entry', rowvals, 'does not have an NSA number, cannot use')
+        nsanum = int(r[2])
+        nsastr = 'NSA' + str(nsanum)
+        ngcstr = 'NGC' + r[1]
 
-        nsanum = nsaidx = None
-        for i, nm in enumerate(othernames):
-            if nm.startswith('NSA'):
-                nsanum = int(nm[3:])
-                nsaidx = i
-                break
-        if nsanum is None:
-            continue  # skip this one, it's not an NSA object
-
-        del othernames[i]
-        if sysname is not None:
-            othernames.insert(0, sysname)
-        if not othernames:
-            othernames = None
-
-        hosts.append(NSAHost(nsanum, othernames))
+        hosts.append(NSAHost(nsanum, [ngcstr, nsastr]))
 
     return hosts
-
-
 
 
 
