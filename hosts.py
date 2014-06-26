@@ -1058,7 +1058,8 @@ def get_saga_hosts():
 
     return hostsd
 
-def get_saga_hosts_from_google(googleusername, googlepasswd=None):
+def get_saga_hosts_from_google(googleusername, googlepasswd=None,
+                               useobservingsummary=False):
     """
     Returns a lost of hosts obtained from querying the google spreadsheet
     "SAGA_Hosts+Satellites".  Currently only works for NSA hosts
@@ -1069,44 +1070,76 @@ def get_saga_hosts_from_google(googleusername, googlepasswd=None):
         Your google login name, typically your gmail address.
     passwd : str or None
         Your google passwd, or None to use python's getpass to input it.
+    useobservingsummary : bool
+        If True, use the "SAGA Observing Summary" spreadsheet, instead.
 
     """
     import getpass
-
     import gspread
 
     if googlepasswd is None:
         googlepasswd = getpass.getpass('Password for "{0}":'.format(googleusername))
 
+    if useobservingsummary:
+        ssname = 'SAGA Observing Summary'
+    else:
+        ssname = 'SAGA_Hosts+Satellites'
+
     c = gspread.Client(auth=(googleusername, googlepasswd))
     c.login()
-    ss = c.open('SAGA_Hosts+Satellites')
+    ss = c.open(ssname)
     s = ss.get_worksheet(0)  # first worksheet
 
-    col1 = s.col_values(1)
-    startrow = col1.index('SAGA Name') + 2
-    endrow = startrow
-    for v in col1[(startrow-1):]:
-        endrow += 1
-        if v.strip() == '':
-            #we've hit the end
-            break
-
-    rowvals = [s.row_values(row) for row in range(startrow, endrow)]
-
     hosts = []
-    for r in rowvals:
-        sysname = r[0]
-        if not r[2].strip():
-            print('Entry', rowvals, 'does not have an NSA number, cannot use')
-        nsanum = int(r[2])
-        nsastr = 'NSA' + str(nsanum)
-        ngcstr = 'NGC' + r[1]
+    if useobservingsummary:
+        col1 = s.col_values(1)
+        startrow = col1.index('Summary of Observed Systems') + 3
+        endrow = [i for i, v in enumerate(col1) if v is not None and v.startswith('these systems are currently deprecated')][0] + 1
 
-        hosts.append(NSAHost(nsanum, [sysname, ngcstr]))
+        rowvals = [s.row_values(row) for row in range(startrow, endrow)]
+        for r in rowvals:
+            sysname = r[0]
+            othernames = [nm.replace(' ', '') for nm in r[1].split(',')]
+
+            nsanum = nsaidx = None
+            for i, nm in enumerate(othernames):
+                if nm.startswith('NSA'):
+                    nsanum = int(nm[3:])
+                    nsaidx = i
+                    break
+            if nsanum is None:
+                continue  # skip this one, it's not an NSA object
+
+            del othernames[i]
+            if sysname is not None:
+                othernames.insert(0, sysname)
+            if not othernames:
+                othernames = None
+
+            hosts.append(NSAHost(nsanum, othernames))
+    else:
+        col1 = s.col_values(1)
+        startrow = col1.index('SAGA Name') + 2
+        endrow = startrow
+        for v in col1[(startrow-1):]:
+            endrow += 1
+            if v.strip() == '':
+                #we've hit the end
+                break
+
+        rowvals = [s.row_values(row) for row in range(startrow, endrow)]
+
+        for r in rowvals:
+            sysname = r[0]
+            if not r[2].strip():
+                print('Entry', rowvals, 'does not have an NSA number, cannot use')
+            nsanum = int(r[2])
+            nsastr = 'NSA' + str(nsanum)
+            ngcstr = 'NGC' + r[1]
+
+            hosts.append(NSAHost(nsanum, [sysname, ngcstr, nsastr]))
 
     return hosts
-
 
 
 #this adds the hosts from the get_saga_hosts function to the module's namespace
