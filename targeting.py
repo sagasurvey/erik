@@ -524,17 +524,73 @@ def sdss_IAU_id_to_ra_dec(sdssids, matchtocatalog=None):
         return coords
 
 
+_DEFAULT_TREM_URL = 'http://docs.google.com/spreadsheets/d/1Y3nO7VyU4jDiBPawCs8wJQt2s_PIAKRj-HSrmcWeQZo/export?format=csv&gid=1379081675'
+def remove_targets_with_remlist(cat, hostorhostname,
+                                listfnorurl=_DEFAULT_TREM_URL,
+                                matchtol=0.1*u.arcsec):
+    """
+    Use either a local csv copy, or a URL to the google spreadsheet of the
+    target remove list to remove manually/by-eye filtered targets.
 
+    Parameters
+    ----------
+    cat : astropy.table.Table
+        The target catalog to remove from.  Typically the output of
+        `select_targets`, but can be anything with 'ra' and 'dec' fields.
+    hostorhostname : str or NSAHost
+        The name of the host to use, or the host object (in which case its)
+        name will come from the object.
+    listfnorurl : str
+        A local path to a csv file or a URL to the google spreadsheet that has
+        the target remove list.
+    matchtol : astropy Quantity
+        How close the match has to be if the objid search fails
+    """
+    import urllib2
+    from astropy.coordinates import ICRS
 
+    hostname = getattr(hostorhostname, 'name', hostorhostname)
 
+    objids = cat['objID']
+    catcoords = ICRS(cat['ra']*u.deg, cat['dec']*u.deg)
 
+    objidstoremove = []
 
+    if listfnorurl.startswith('http://'):
+        uo = urllib2.urlopen(listfnorurl)
+        try:
+            remlist_content = uo.read()
+        finally:
+            uo.close()
+    else:
+        with open(listfnorurl) as f:
+            remlist_content = f.read()
 
+    nmatched = 0
+    for l in remlist_content.split('\n')[2:]:  # [2:] is to skip header lines
+        if l.replace(',', '').strip() == '':
+            continue  # empty line
 
+        ls = l.split(',')
+        if ls[0] == hostname:
+            #try to find it in the catalog, first by objid, and if not, by ra/dec
+            objid = long(ls[2])
+            if objid in objids:
+                objidstoremove.append(objid)
+                nmatched += 1
+            else:
+                objcoord = ICRS(float(ls[3])*u.deg, float(ls[4])*u.deg)
+                idx, sep, sep3d = objcoord.match_to_catalog_sky(catcoords)
+                if sep < matchtol:
+                    objidstoremove.append(objid)
+                    nmatched += 1
+                else:
+                    print 'Could not find a match for objid {0} of {1}, closest is {2}'.format(objid, hostname, sep.to(u.arcsec))
 
+    if nmatched == 0:
+        print 'No matches found for host "{0}" in remove list. Maybe you mis-typed something?'.format(hostname)
+    else:
+        print 'Removed', nmatched, 'objects for', hostname
 
-
-
-
-
+    return cat[~np.in1d(objids, objidstoremove)]
 

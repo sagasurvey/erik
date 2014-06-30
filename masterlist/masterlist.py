@@ -775,8 +775,7 @@ def cross_id_w_sdss(mastercat, searchrad=30*u.arcsec, limitto=None,
         return req
 
 REMOVE_LIST_URLS = {'master': 'http://docs.google.com/spreadsheets/d/1Y3nO7VyU4jDiBPawCs8wJQt2s_PIAKRj-HSrmcWeQZo/export?format=csv&gid=0',
-                    'host':'http://docs.google.com/spreadsheets/d/1Y3nO7VyU4jDiBPawCs8wJQt2s_PIAKRj-HSrmcWeQZo/export?format=csv&gid=1133875164',
-                    'target':'http://docs.google.com/spreadsheets/d/1Y3nO7VyU4jDiBPawCs8wJQt2s_PIAKRj-HSrmcWeQZo/export?format=csv&gid=1379081675'}
+                    'host':'http://docs.google.com/spreadsheets/d/1Y3nO7VyU4jDiBPawCs8wJQt2s_PIAKRj-HSrmcWeQZo/export?format=csv&gid=1133875164'}
 
 def remove_from_list(lst, toremove, tol=0.03*u.arcsec, erroronnomatch=True):
     """
