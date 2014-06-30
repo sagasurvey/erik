@@ -129,6 +129,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         rhost = ((dra * cdec) ** 2 + ddec ** 2) ** 0.5
         colcls = MaskedColumn if hasattr(rhost, 'mask') else Column
         cat.add_column(colcls(name='rhost', data=rhost))
+        cat.add_column(colcls(name='rhost_kpc', data=np.radians(rhost)*host.distmpc*1000))
 
     #negative for arcmin
     if outercutrad is not None:
@@ -521,7 +522,6 @@ def sdss_IAU_id_to_ra_dec(sdssids, matchtocatalog=None):
         return idx, sep.to(u.arcsec)
     else:
         return coords
-
 
 
 
