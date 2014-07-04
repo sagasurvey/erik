@@ -1,6 +1,8 @@
 """
 This file contains functions for targeting objects as part of the SAGA Survey's
 AAT observations.
+
+Note that priority levels 5 and 7 are only used if wise data is present
 """
 import numpy as np
 
@@ -15,30 +17,51 @@ def prioritize_targets(targets, rvir=300*u.kpc):
     g = targets['g']
     r = targets['r']
     i = targets['i']
+    w1 = targets['w1'] if 'w1' in targets.colnames else None
     rkpc = targets['rhost_kpc']
 
     pris = np.zeros(len(targets), dtype=int)
 
+    pris[(g-r < 1.2) & (r-i < 0.7) & (r<21) & (rkpc < rvkpc)] = 1
+    pris[(g-r < 1.2) & (r-i < 0.7) & (r<20.5) & (rkpc < rvkpc)] = 2
 
-    pris[(g-r < 1.2) & (r-i < 0.7) & (r<21)] = 1
-    pris[(g-r < 1.0) & (r-i < 0.5) & (r<21)] = 2
+    pris[(g-r < 1.0) & (r-i < 0.5) & (r<20.5) & (rkpc > rvkpc)] = 3
 
-    pris[(g-r < 1.2) & (r-i < 0.7) & (r<20.5)] = 3
-    pris[(g-r < 1.0) & (r-i < 0.5) & (r<20.5)] = 4
+    #add priority level 5 and 7 *only* if WISE data are present
+    pris[(g-r < 1.0) & (r-i < 0.5) & (r<21) & (rkpc < rvkpc)] = 4
+    if w1 is not None:
+        pris[(r-w1<2.5) & (g-r < 1.0) & (r-i < 0.5) & (r<21) & (rkpc < rvkpc)] = 5
 
-    pris[(g-r < 1.2) & (r-i < 0.7) & (r<21) & (rkpc < rvkpc)] = 5
-    pris[(g-r < 1.0) & (r-i < 0.5) & (r<21) & (rkpc < rvkpc)] = 6
+    pris[(g-r < 1.0) & (r-i < 0.5) & (r<20.5) & (rkpc < rvkpc)] = 6
+    if w1 is not None:
+        pris[(r-w1<2.5) & (g-r < 1.0) & (r-i < 0.5) & (r<20.5) & (rkpc < rvkpc)] = 7
 
-    pris[(g-r < 1.2) & (r-i < 0.7) & (r<20.5) & (rkpc < rvkpc)] = 7
-    pris[(g-r < 1.0) & (r-i < 0.5) & (r<20.5) & (rkpc < rvkpc)] = 8
+    #original version
+    # pris[(g-r < 1.2) & (r-i < 0.7) & (r<21)] = 1
+    # pris[(g-r < 1.0) & (r-i < 0.5) & (r<21)] = 2
+
+    # pris[(g-r < 1.2) & (r-i < 0.7) & (r<20.5)] = 3
+    # pris[(g-r < 1.0) & (r-i < 0.5) & (r<20.5)] = 4
+
+    # pris[(g-r < 1.2) & (r-i < 0.7) & (r<21) & (rkpc < rvkpc)] = 5
+    # pris[(g-r < 1.0) & (r-i < 0.5) & (r<21) & (rkpc < rvkpc)] = 6
+
+    # pris[(g-r < 1.2) & (r-i < 0.7) & (r<20.5) & (rkpc < rvkpc)] = 7
+    # pris[(g-r < 1.0) & (r-i < 0.5) & (r<20.5) & (rkpc < rvkpc)] = 8
 
     return pris
 
 
 def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
-                       fluxstars, skyradec, outfn=None, randomizeorder=True):
+                       fluxstars, skyradec, outfn=None, randomizeorder=True,
+                       fluxpri=9, inclhost=True):
     """
-    Rank of 1 to 9 means use (9 highest), others skipped
+    Priority of 1 to 9 (9 highest) means use, any other `pris` values skipped
+
+    `skyradec` can either be (ra, dec) or a string to be a filename that will
+    simply be pulled in wholesale.
+
+    `inclhost` can give the priority, if desired - defaults to 9
     """
     lines = []
     lines.append('LABEL ' + host.name + ' base catalog')
@@ -58,6 +81,23 @@ def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
         idxs = np.random.permutation(len(catalog))
     else:
         idxs = np.arange(len(catalog))
+
+    if inclhost:
+        if inclhost is True:
+            inclhost = 9
+
+        entry = []
+
+        entry.append(host.name.replace(' ', ''))
+        entry.append(host.coords.ra.to(u.hourangle).to_string(sep=' ', precision=2))
+        entry.append(host.coords.dec.to_string(sep=' ', alwayssign=True, precision=2))
+        entry.append('P')
+        entry.append(str(int(inclhost)))
+        entry.append('{0:0.2f}'.format(host.r + host.distmod))
+        entry.append('0')
+        entry.append('host galaxy')
+
+        lines.append(' '.join(entry))
 
     for ci, pri in zip(catalog[idxs], pris[idxs]):
         if not 1 <= pri <= 9:
@@ -88,7 +128,7 @@ def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
         entry.append(Angle(fxs['ra'], u.deg).to(u.hourangle).to_string(sep=' ', precision=2))
         entry.append(Angle(fxs['dec'], u.deg).to_string(sep=' ', alwayssign=True, precision=2))
         entry.append('P')
-        entry.append('9')
+        entry.append(str(int(fluxpri)))
         entry.append('{0:0.2f}'.format(fxs['r']))
         entry.append('0')
         entry.append('id=' + str(fxs['objID']))
@@ -115,24 +155,28 @@ def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
         lines.append(' '.join(entry))
 
     lines.append('\n#Sky positions')
-    if randomizeorder:
-        idxs = np.random.permutation(len(skyradec[0]))
+    if isinstance(skyradec, basestring):
+        with open(skyradec, 'r') as f:
+            lines.extend(f.read().split('\n'))
     else:
-        idxs = np.arange(len(skyradec[0]))
-    skyradeczip = np.array(zip(*skyradec))
-    for idx, (ra, dec) in enumerate(skyradeczip[idxs]):
-        entry = []
+        if randomizeorder:
+            idxs = np.random.permutation(len(skyradec[0]))
+        else:
+            idxs = np.arange(len(skyradec[0]))
+        skyradeczip = np.array(zip(*skyradec))
+        for idx, (ra, dec) in enumerate(skyradeczip[idxs]):
+            entry = []
 
-        entry.append('Sky' + str(idx))
-        entry.append(Angle(ra, u.deg).to(u.hourangle).to_string(sep=' ', precision=2))
-        entry.append(Angle(dec, u.deg).to_string(sep=' ', alwayssign=True, precision=2))
-        entry.append('S')
-        entry.append('9')
-        entry.append('20.00')
-        entry.append('0')
-        entry.append('sky')
+            entry.append('Sky' + str(idx))
+            entry.append(Angle(ra, u.deg).to(u.hourangle).to_string(sep=' ', precision=2))
+            entry.append(Angle(dec, u.deg).to_string(sep=' ', alwayssign=True, precision=2))
+            entry.append('S')
+            entry.append('9')
+            entry.append('20.00')
+            entry.append('0')
+            entry.append('sky')
 
-        lines.append(' '.join(entry))
+            lines.append(' '.join(entry))
 
     if outfn is not None:
         with open(outfn, 'w') as f:
@@ -143,26 +187,58 @@ def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
 
 
 def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
-                              nflux='all', nsky='all', utcobsdate=None):
+                              nflux='all', nsky='all', utcobsdate=None,
+                              fieldname=None, listorem=None, guidemags='all'):
     """
     Selects from the master .fld and creates a smaller .fld file for consumption
     by configure.
 
     nperpri maps pri numbers to the number to do (any missing are
-    treated as 0)
+    treated as 0). 'all'
+
+    `listorem` should be a list of ".lis" files of allocations as output by
+    configure (or None)
+
+    `guidemags` can be 'all' or a 2-tuple
     """
 
     inhdr = True
 
+    if fieldname is None:
+        fieldname = 'subsampled'
+
+    if nperpri == 'all':
+        nperpri = {}
+        for i in range(10):
+            nperpri[i] = np.inf
+
     skydone = fluxdone = guidesdone = 0
     pridone = dict([(i, 0) for i in range(10) if i != 0])
+
+    namestoskip = []
+    if listorem:
+        for lis in listorem:
+            with open(lis) as f:
+                prentslen = len(namestoskip)
+                for l in f:
+                    if l.startswith('*'):
+                        ls = l.split()
+                        if len(ls) > 12:
+                            #actual object line
+                            if not(ls[2].startswith('Sky') or
+                                   ls[2].startswith('Guide') or
+                                   ls[2].startswith('Flux') or
+                                   ls[2].startswith('Parked')):
+                                namestoskip.append(ls[2])
+            print 'Found', len(namestoskip) - prentslen, 'objects to remove in', lis
+
 
     with open(masterfn) as fr:
         with open(outfn, 'w') as fw:
             for l in fr:
                 if inhdr:
                     if l.startswith('LABEL'):
-                        fw.write(l.replace('base catalog', 'subsampled'))
+                        fw.write(l.replace('base catalog', fieldname))
                     elif l.startswith('UTDATE'):
                         if utcobsdate is None:
                             fw.write(l)
@@ -183,6 +259,10 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
                         fw.write(l)
                     elif l.startswith('Guide'):
                         if nguides == 'all' or (guidesdone < nguides):
+                            if guidemags != 'all':
+                                mag = float(l.split()[9])
+                                if not (guidemags[0] < mag < guidemags[1]):
+                                    continue  # outside of the valid mag range
                             fw.write(l)
                             guidesdone += 1
                     elif l.startswith('Flux'):
@@ -195,11 +275,16 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
                             skydone += 1
                     else:  # program target
                         ls = l.split()
+                        if ls[0] in namestoskip:
+                            del namestoskip[namestoskip.index(ls[0])]
+                            continue
                         pri = int(ls[8])
                         ntodo = nperpri.get(pri, 0)
                         if pridone[pri] < nperpri.get(pri, 0):
                             fw.write(l)
                             pridone[pri] += 1
+    if len(namestoskip) > 0:
+        print 'Had', len(namestoskip), 'unmatched list file objects:\n', namestoskip
 
 
 def imagelist_fld_targets(fldlinesorfn, ttype='all', **kwargs):
@@ -283,17 +368,27 @@ def select_guide_stars_sdss(cat, magrng=(13.5, 14)):
 
     return cat[msk]
 
-def select_sky_positions(host, nsky=250, sdsscat=None, usnocat=None, nearnesslimitarcsec=15):
+def select_sky_positions(host, nsky=250, sdsscat=None, usnocat=None,
+                         nearnesslimitarcsec=15, outfn=None):
     """
-    Produces sky positions uniformly covering a circle centered at the host
+    Produces sky positions uniformly covering a circle centered at the host,
+    with radius given by `environsarcmin`.
 
     Parameters
     ----------
     host : NSAHost
-    sdsscat
-    usnocat
+        The host to make sky
     nsky : int
         Number of sky positions to generate
+    sdsscat : Table or None
+        The SDSS catalog for this host or None to use `get_sdss_catalog`
+    usnocat : Table or None
+        The SDSS catalog for this host or None to use `get_usnob_catalog`
+    nearnesslimitarcsec : float or Quantity
+        How close a position has to be to a catalog entry to get eliminated
+    outfn : None or str
+        If given, a file to save the sky positions out suitable for use in an
+        AAT fld file
 
     Returns
     -------
@@ -307,7 +402,9 @@ def select_sky_positions(host, nsky=250, sdsscat=None, usnocat=None, nearnesslim
     if usnocat is None:
         usnocat = host.get_usnob_catalog()
 
-    neardeg = nearnesslimitarcsec / 3600.
+    if not isinstance(nearnesslimitarcsec, u.Quantity):
+        nearnesslimitarcsec = nearnesslimitarcsec * u.arcsec
+    neardeg = nearnesslimitarcsec.to(u.deg).value
 
     skdt = cKDTree(np.array([sdsscat['ra'], sdsscat['dec']]).T)
     ukdt = cKDTree(np.array([usnocat['RA'], usnocat['DEC']]).T)
@@ -337,6 +434,23 @@ def select_sky_positions(host, nsky=250, sdsscat=None, usnocat=None, nearnesslim
 
         if i > 100:
             raise ValueError('Could not produce {nsky} sky positions after {i} iterations!'.format(nsky=nsky, i=i))
+
+    if outfn:
+        with open(outfn, 'w') as f:
+            for idx, (ra, dec) in enumerate(zip(ras[:nsky], decs[:nsky])):
+                entry = []
+
+                entry.append('Sky' + str(idx))
+                entry.append(Angle(ra, u.deg).to(u.hourangle).to_string(sep=' ', precision=2))
+                entry.append(Angle(dec, u.deg).to_string(sep=' ', alwayssign=True, precision=2))
+                entry.append('S')
+                entry.append('9')
+                entry.append('20.00')
+                entry.append('0')
+                entry.append('sky')
+
+                f.write(' '.join(entry))
+                f.write('\n')
 
     return ras[:nsky], decs[:nsky]
 
@@ -386,9 +500,9 @@ def select_flux_stars(cat, magrng=(17, 17.7), extcorr=False, fluxfnout=None, onl
 
     if onlyoutside:
         if onlyoutside.unit.is_equivalent(degree):
-            msk = msk & ((cat['rhost'] * degree) > onlyoutside)
+            msk = msk & ((degree * cat['rhost']) > onlyoutside)
         elif onlyoutside.unit.is_equivalent(kpc):
-            msk = msk & (cat['rhost_kpc'] * kpc > onlyoutside)
+            msk = msk & ((kpc * cat['rhost_kpc']) > onlyoutside)
         else:
             raise ValueError('onlyoutside is not an angle or length')
 

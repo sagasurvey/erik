@@ -272,7 +272,8 @@ class NSAHost(object):
         return np.radians(angle) * 1000 * self.distmpc * u.kpc
 
     def sdss_environs_query(self, dl=False, usecas=False, magcut=None,
-                            inclphotzs=True, applyphotflags=False):
+                            inclphotzs=True, applyphotflags=False,
+                            xmatchwise=False):
         """
         Constructs an SDSS query to get the SDSS objects around this
         host and possibly downloads the catalog.
@@ -298,6 +299,9 @@ class NSAHost(object):
         applyphotflags : bool
             If True, adds photometry flags to the query (See
             `construct_sdss_query` for exact flags)
+        xmatchwise : bool
+            If True, the query will also cross-match against WISE and include w1
+            mags.
 
         Returns
         -------
@@ -316,9 +320,12 @@ class NSAHost(object):
         usecas = False if dl else usecas
         magcut = self.sdssquerymagcut if magcut is None else magcut
 
+        intoname = self.name.replace(' ', '_') + ('_wwise' if xmatchwise else '')
+
         query = construct_sdss_query(self.ra, self.dec, raddeg,
-            into=('{0}_environs'.format(self.name)) if usecas else None,
-            magcut=magcut, inclphotzs=inclphotzs, applyphotflags=applyphotflags)
+            into=('{0}_environs'.format(intoname)) if usecas else None,
+            magcut=magcut, inclphotzs=inclphotzs, applyphotflags=applyphotflags,
+            xmatchwise=xmatchwise)
 
         if dl:
             altfns = [self.fnsdss]
@@ -749,7 +756,7 @@ def get_gama(fn=None):
 
 
 def construct_sdss_query(ra, dec, radius=1*u.deg, into=None, magcut=None,
-                         inclphotzs=True, applyphotflags=False):
+                         inclphotzs=True, applyphotflags=False, xmatchwise=False):
     """
     Generates the query to send to the SDSS to get the full SDSS catalog around
     a target.
@@ -775,6 +782,9 @@ def construct_sdss_query(ra, dec, radius=1*u.deg, into=None, magcut=None,
     applyphotflags: bool
         If True, the query will some basic photometric flags (see the code for
         the exact flags)
+    xmatchwise : bool
+        If True, the query will also cross-match against WISE and include w1
+        mags.
 
     Returns
     -------
@@ -800,11 +810,12 @@ def construct_sdss_query(ra, dec, radius=1*u.deg, into=None, magcut=None,
     p.lnLExp_r, p.lnLDeV_r, p.lnLStar_r,
     p.extinction_u as Au, p.extinction_g as Ag, p.extinction_r as Ar, p.extinction_i as Ai, p.extinction_z as Az,
     ISNULL(s.z, -1) as spec_z, ISNULL(s.zErr, -1) as spec_z_err, ISNULL(s.zWarning, -1) as spec_z_warn, s.class as spec_class,
-    s.subclass as spec_subclass{photzdata}
+    s.subclass as spec_subclass{photzdata}{wisedata}
 
 
     {intostr}
     FROM {funcprefix}fGetNearbyObjEq({ra}, {dec}, {radarcmin}) n, PhotoPrimary p
+    {wisejoins}
     LEFT JOIN SpecObj s ON p.specObjID = s.specObjID
     {photzjoins}WHERE n.objID = p.objID{magcutwhere}
     {photflags}
@@ -829,6 +840,14 @@ def construct_sdss_query(ra, dec, radius=1*u.deg, into=None, magcut=None,
         photzjoins = 'LEFT JOIN PhotoZ pz ON p.ObjID = pz.ObjID\n'
     else:
         photzdata = photzjoins = ''
+
+    if xmatchwise:
+        wisedata = ', ISNULL(W.w1mpro,-99) as w1, ISNULL(W.w1sigmpro, -99) as w1_err'
+
+        wisejoins = ('LEFT JOIN WISE_xmatch X ON p.objid = X.sdss_objid\n'
+                     'LEFT JOIN wise_allsky W ON x.wise_cntr = W.cntr')
+    else:
+        wisejoins = wisedata = ''
 
     if applyphotflags:
         photflags = dedent("""
