@@ -189,12 +189,13 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
             # take this to just mean it has to be within the given cutoff of the host
             zthresh = (host.zspec + removegalsathighz/c).decompose().value
         else:
-            #here,  "high" z means more than 3sigma above the host's redshift
-            zthresh = (host.zspec + 3 * host.zdisterr)
+            #here,  "high" z means more than 3sigma above the host's redshift in quadrature with the galaxy's spec error
+            zthresh = (host.zspec + 3 * np.hypot(host.zdisterr, cat['spec_z_err']))
         highzgals = gals & ((cat['spec_z']) > zthresh)
         lowzgals = gals & ((cat['spec_z']) <= zthresh)
-        print('Removing {0} objects at high z, keeping {1} (total of {2} objects)'.format(highzgals.sum(), lowzgals.sum(), len(lowzgals)))
-        msk[highzgals] = False
+        validspec = cat['spec_z_warn'] == 0
+        print('Removing {0} objects at high z w/ good spectra, keeping {1} (total of {2} objects)'.format(highzgals.sum(), lowzgals.sum(), len(lowzgals)))
+        msk[highzgals&validspec] = False
 
     if removeallsdss:
         sdssspecs = ~cat['spec_class'].mask
