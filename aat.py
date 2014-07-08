@@ -54,7 +54,7 @@ def prioritize_targets(targets, rvir=300*u.kpc):
 
 def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
                        fluxstars, skyradec, outfn=None, randomizeorder=True,
-                       fluxpri=9, inclhost=True):
+                       fluxpri=8, inclhost=True):
     """
     Priority of 1 to 9 (9 highest) means use, any other `pris` values skipped
 
@@ -188,7 +188,8 @@ def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
 
 def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
                               nflux='all', nsky='all', utcobsdate=None,
-                              fieldname=None, listorem=None, guidemags='all'):
+                              fieldname=None, listorem=None, dontrempri=None,
+                              guidemags='all'):
     """
     Selects from the master .fld and creates a smaller .fld file for consumption
     by configure.
@@ -198,6 +199,9 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
 
     `listorem` should be a list of ".lis" files of allocations as output by
     configure (or None)
+
+    `dontrempri` is the priority to include even if it's in one of the
+    `listorem`s.
 
     `guidemags` can be 'all' or a 2-tuple
     """
@@ -214,6 +218,7 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
 
     skydone = fluxdone = guidesdone = 0
     pridone = dict([(i, 0) for i in range(10) if i != 0])
+    pritotal = dict([(i, 0) for i in range(10) if i != 0])
 
     namestoskip = []
     if listorem:
@@ -275,16 +280,22 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
                             skydone += 1
                     else:  # program target
                         ls = l.split()
+                        pri = int(ls[8])
+
+                        #skip *unless* dontrrempri == pri
                         if ls[0] in namestoskip:
                             del namestoskip[namestoskip.index(ls[0])]
-                            continue
-                        pri = int(ls[8])
+                            if dontrempri != pri:
+                                continue
                         ntodo = nperpri.get(pri, 0)
                         if pridone[pri] < nperpri.get(pri, 0):
                             fw.write(l)
                             pridone[pri] += 1
+                        pritotal[pri] += 1
     if len(namestoskip) > 0:
         print 'Had', len(namestoskip), 'unmatched list file objects:\n', namestoskip
+
+    print 'Total remaining in each priority:', pritotal
 
 
 def imagelist_fld_targets(fldlinesorfn, ttype='all', **kwargs):
@@ -359,7 +370,7 @@ def select_guide_stars_usnob(host, faintlimit=13.5, brightlimit=12., randomize=T
 
     return res
 
-def select_guide_stars_sdss(cat, magrng=(13.5, 14)):
+def select_guide_stars_sdss(cat, magrng=(12.5, 14)):
     msk = cat['type'] == 6 #type==6 means star
 
     magrng = min(*magrng), max(*magrng)
