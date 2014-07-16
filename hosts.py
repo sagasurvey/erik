@@ -18,9 +18,6 @@ SDSS_SQL_URL = 'http://skyserver.sdss3.org/dr10/en/tools/search/x_sql.aspx'
 
 USNOB_URL = 'http://www.nofs.navy.mil/cgi-bin/vo_cone.cgi'
 
-GAMA_URL = 'http://www.gama-survey.org/dr1/data/GamaCoreDR1_v1.csv.gz'
-#gama stated limit: r < 19.8
-
 TELL_IF_USING_CACHED = False  # If True, show an informational message about where the NSA is coming from
 
 
@@ -706,53 +703,6 @@ def get_nsa(fn=None):
     _cachednsa[fn] = res
 
     return res
-
-
-_cachedgama = {}
-def get_gama(fn=None):
-    """
-    Download or load the GAMA survey data
-
-    Parameters
-    ----------
-    fn : str or None
-        A file to load from or None to use the default.
-    Returns
-    -------
-    gamadata
-        The data as an astropy `Table`.  Table will also have `decmax`,
-        `decmin`, `ramax`, and `ramin`.
-    """
-    import os
-    from urllib2 import urlopen
-
-    from astropy.io import ascii
-    from hosts import download_with_progress_updates
-
-    if fn is None:
-        fn = os.path.join('catalogs', os.path.split(GAMA_URL)[-1])
-
-    if fn in _cachedgama:
-        #print('Using cached GAMA for file', fn)
-        return _cachedgama[fn]
-
-    if not os.path.exists(fn):
-        with open(fn, 'w') as fw:
-            msg = 'Downloading GAMA from ' + GAMA_URL + ' to ' + fn
-            u = urlopen(GAMA_URL)
-            try:
-                download_with_progress_updates(u, fw, msg=msg)
-            finally:
-                u.close()
-
-    tab = _cachedgama[fn] = ascii.read(fn, delimiter=',', guess=False)
-
-    tab.ramax = np.max(tab['RA_J2000'])
-    tab.ramin = np.min(tab['RA_J2000'])
-    tab.decmax = np.max(tab['DEC_J2000'])
-    tab.decmin = np.min(tab['DEC_J2000'])
-
-    return tab
 
 
 def construct_sdss_query(ra, dec, radius=1*u.deg, into=None, magcut=None,

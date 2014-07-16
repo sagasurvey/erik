@@ -12,8 +12,6 @@ from matplotlib import pyplot as plt
 from astropy import units as u
 
 
-from hosts import get_gama
-
 SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss3.org/dr10/en/tools/chart/list.aspx'
 
 # the color cuts specified in the BOSSANOVA proposal
@@ -235,7 +233,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     return res
 
 
-def find_gama(cat, host, raddeg, tol, matchfuture=True):
+def find_gama(cat, host, raddeg, tol, matchfuture=True, whichgama='DR1'):
     """
     Find GAMA objects that match the given ra/decs within a tolerance
 
@@ -252,6 +250,8 @@ def find_gama(cat, host, raddeg, tol, matchfuture=True):
     matchfuture : bool
         If True, include things that are planned for future GAMA releases.
         Otherwise, only accepts things that are currently in GAMA
+    whichgama : str or Table
+        Either 'DR1' or 'DR2' or a table as from 'get_gama'
 
     Returns
     -------
@@ -269,19 +269,41 @@ def find_gama(cat, host, raddeg, tol, matchfuture=True):
     ra0 = host.ra
     dec0 = host.dec
 
-    g = get_gama()
-    gamacoverage = ( (g['RA_J2000'] < (ra0 + raddeg)) &
-                     (g['RA_J2000'] > (ra0 - raddeg)) &
-                     (g['DEC_J2000'] < (dec0 + raddeg)) &
-                     (g['DEC_J2000'] > (dec0 - raddeg)) )
+    if isinstance(whichgama, basestring):
+        g = get_gama(url=whichgama)
+    else:
+        g = whichgama
+
+    #first try to figure out the relevant GAMA column names
+    gamacols = dict(granm=('RA_J2000', 'RA'),
+                    gdecnm=('DEC_J2000', 'DEC'),
+                    gznm=('Z_HELIO', 'Z'),
+                    gzqnm=('Z_QUALITY', 'NQ'))
+    for varnm, colnms in gamacols.items():
+        for colnm in colnms:
+            if colnm in g.dtype.names:
+                gamacols[varnm] = colnm
+                break
+        else:
+            msg = 'Could not find any of {0} while looking for {1}'
+            raise ValueError(msg.format(colnms, varnm))
+    granm = gamacols['granm']
+    gdecnm = gamacols['gdecnm']
+    gznm = gamacols['gznm']
+    gzqnm = gamacols['gzqnm']
+
+    gamacoverage = ((g[granm] < (ra0 + raddeg)) &
+                    (g[granm] > (ra0 - raddeg)) &
+                    (g[gdecnm] < (dec0 + raddeg)) &
+                    (g[gdecnm] > (dec0 - raddeg)))
 
     if matchfuture:
-        gamaspec = g['Z_QUALITY'] > 2
+        gamaspec = g[gzqnm] > 2
     else:
-        gamaspec = (g['Z_HELIO'] > -2) & (g['Z_QUALITY'] > 2)
+        gamaspec = (g[gznm] > -2) & (g[gzqnm] > 2)
 
     gm = g[gamacoverage & gamaspec]
-    kdt = spatial.cKDTree(np.array([gm['RA_J2000'], gm['DEC_J2000']]).T)
+    kdt = spatial.cKDTree(np.array([gm[granm], gm[gdecnm]]).T)
 
     ds, idx = kdt.query(np.array([catra, catdec]).T)
 
@@ -373,9 +395,10 @@ def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
 
     Parameters
     ----------
-    ras : array-like or astropy.table.Table
+    ras : array-like or astropy.table.Table or astropy coordinate
         RA of objects to be marked in degrees or a table with 'ra' and 'dec'
-        columnds if ``decs`` is None
+        columnds if ``decs`` is None, or an astropy coordinate object  with
+        ra and dec if `decs` is None.
     decs : array-like or None
         Dec of objects to be marked in degrees, or None if ``ras`` is to be
         treated as a table
@@ -406,9 +429,13 @@ def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
     import os
 
     if decs is None:
-        # assume it's a Table
-        decs = ras['dec']
-        ras = ras['ra']
+        if hasattr(ras, 'ra') and hasattr(ras, 'dec'):
+            decs = ras.dec
+            ras = ras.ra
+        else:
+            # assume it's a Table
+            decs = ras['dec']
+            ras = ras['ra']
 
     if len(ras) != len(decs):
         raise ValueError('ras and decs not the same size!')
@@ -594,4 +621,77 @@ def remove_targets_with_remlist(cat, hostorhostname,
         print 'Removed', nmatched, 'objects for', hostname
 
     return cat[~np.in1d(objids, objidstoremove)]
+
+
+_cachedgama = {}
+def get_gama(fn=None, url='DR1'):
+    """
+    Download or load the GAMA survey data
+
+    Parameters
+    ----------
+    fn : str or None
+        A file to load from or None to use the default.
+    url : str
+        The URL to get the GAMA catalog from.  Or can be 'DR1' or 'DR2' to get
+        the spectroscopic data from the standard locations.
+
+    Returns
+    -------
+    gamadata
+        The data as an astropy `Table`.  Table will also have `decmax`,
+        `decmin`, `ramax`, and `ramin`.
+    """
+    import os
+    from urllib2 import urlopen
+
+    from astropy.io import ascii, fits
+    from hosts import download_with_progress_updates
+
+    URLMAP = {
+    'DR1': 'http://www.gama-survey.org/dr1/data/GamaCoreDR1_v1.csv.gz',
+    'DR2': 'http://www.gama-survey.org/dr2/data/cat/SpecCat/v08/SpecObj.fits'}
+
+    url = URLMAP.get(url, url)
+
+    if fn is None:
+        fn = os.path.split(url)[-1]
+        if not fn.lower().startswith('gama'):
+            fn = 'GAMA' + fn
+        fn = os.path.join('catalogs', fn)
+
+
+    if fn in _cachedgama:
+        return _cachedgama[fn]
+
+    if not os.path.exists(fn):
+        with open(fn, 'w') as fw:
+            msg = 'Downloading GAMA from ' + url + ' to ' + fn
+            u = urlopen(url)
+            try:
+                download_with_progress_updates(u, fw, msg=msg)
+            finally:
+                u.close()
+
+    if '.fits' in fn:
+        tab = _cachedgama[fn] = fits.getdata(fn, 1)
+    elif '.csv' in fn:
+        tab = _cachedgama[fn] = ascii.read(fn, delimiter=',', guess=False)
+    else:
+        raise ValueError('Unrecognized file type for GAMA file:' + str(fn))
+
+    if 'RA_J2000' in tab.dtype.names:
+        rastr = 'RA_J2000'
+        decstr = 'DEC_J2000'
+    else:
+        rastr = 'RA'
+        decstr = 'DEC'
+
+    tab.ramax = np.max(tab[rastr])
+    tab.ramin = np.min(tab[rastr])
+    tab.decmax = np.max(tab[decstr])
+    tab.decmin = np.min(tab[decstr])
+
+    return tab
+
 
