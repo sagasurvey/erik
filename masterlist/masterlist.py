@@ -207,7 +207,7 @@ def add_nsa(mastercat, nsa=None, matchtolerance=10*u.arcsec,
         mag) will be selected as the one object, or it can be 'closest' to just
         pick the closest to the PGC coordinates.
     """
-    from astropy.coordinates import ICRS
+    from astropy.coordinates import SkyCoord
 
     if nsa is None:
         nsa = load_nsa()
@@ -215,8 +215,8 @@ def add_nsa(mastercat, nsa=None, matchtolerance=10*u.arcsec,
     #cross-match with NSA - need to match on RA/Dec because no PGC #s in NSA
     ral, decl = mastercat['al2000'], mastercat['de2000']
     lmsk = (~ral.mask) & (~decl.mask)
-    lcoo = ICRS(u.hour * ral[lmsk], u.degree * decl[lmsk])
-    nsacoo = ICRS(u.degree * nsa['RA'], u.degree * nsa['DEC'])
+    lcoo = SkyCoord(u.hour * ral[lmsk], u.degree * decl[lmsk], frame='icrs')
+    nsacoo = SkyCoord(u.degree * nsa['RA'], u.degree * nsa['DEC'], frame='icrs')
 
     idx, dd, dd3d = nsacoo.match_to_catalog_sky(lcoo)
     dmsk = dd < matchtolerance  # only match those with a closest neighbor w/i tol
@@ -289,8 +289,8 @@ def simplify_catalog(mastercat, quickld=True):
     decs = mastercat['de2000']
     decs[~mastercat['DEC'].mask] = mastercat['DEC'][~mastercat['DEC'].mask]
 
-    tab.add_column(table.MaskedColumn(name='RA', data=ras, units=u.deg))
-    tab.add_column(table.MaskedColumn(name='Dec', data=decs, units=u.deg))
+    tab.add_column(table.MaskedColumn(name='RA', data=ras, unit=u.deg))
+    tab.add_column(table.MaskedColumn(name='Dec', data=decs, unit=u.deg))
 
     #Names/IDs:
     pgc = mastercat['pgc'].copy()
@@ -371,7 +371,7 @@ def simplify_catalog(mastercat, quickld=True):
     tab.add_column(table.MaskedColumn(name='vhelio', data=vs))
     #decided to remove v-errors
     #tab.add_column(table.MaskedColumn(name='vhelio_err', data=v_errs))
-    tab.add_column(table.MaskedColumn(name='distance', data=dist, units=u.Mpc))
+    tab.add_column(table.MaskedColumn(name='distance', data=dist, unit=u.Mpc))
 
     #PHOTOMETRY
     tab.add_column(table.MaskedColumn(name='r', data=mastercat['ABSMAG_r'] + distmod))
@@ -391,7 +391,7 @@ def manually_tweak_simplified_catalog(simplifiedcat):
 
     No longer needed with `add_6df`: they are present.
     """
-    from astropy.coordinates import ICRS
+    from astropy.coordinates import SkyCoord
     from astropy.constants import c
 
     infolines = """
@@ -415,8 +415,8 @@ def manually_tweak_simplified_catalog(simplifiedcat):
         decs.append(float(ls[1]))
         vels.append(float(ls[2]))
 
-    updatecoos = ICRS(ras*u.deg, decs*u.deg)
-    catcoos = ICRS(simplifiedcat['RA'].view(np.ndarray)*u.deg,
+    updatecoos = SkyCoord(ras*u.deg, decs*u.deg)
+    catcoos = SkyCoord(simplifiedcat['RA'].view(np.ndarray)*u.deg,
                    simplifiedcat['Dec'].view(np.ndarray)*u.deg)
     idx, dd, d3d = updatecoos.match_to_catalog_sky(catcoos)
 
@@ -475,10 +475,10 @@ def add_twomassxsc(mastercat, twomassxsc, tol=3*u.arcmin, copymastercat=False):
     With a fiducial cut of cz < 4000 km/s, this goes from 30% with K-band mags
     to 65%
     """
-    from astropy.coordinates import ICRS
+    from astropy.coordinates import SkyCoord
 
-    ctwomass = ICRS(u.deg*twomassxsc['ra'].view(np.ndarray), u.deg*twomassxsc['dec'].view(np.ndarray))
-    cmaster = ICRS(u.deg*mastercat['RA'].view(np.ndarray), u.deg*mastercat['Dec'].view(np.ndarray))
+    ctwomass = SkyCoord(u.deg*twomassxsc['ra'].view(np.ndarray), u.deg*twomassxsc['dec'].view(np.ndarray))
+    cmaster = SkyCoord(u.deg*mastercat['RA'].view(np.ndarray), u.deg*mastercat['Dec'].view(np.ndarray))
     idx, dd, d3d = cmaster.match_to_catalog_sky(ctwomass)
 
     matches = dd < tol
@@ -509,13 +509,13 @@ def add_6df(simplifiedmastercat, sixdf, tol=1*u.arcmin):
     Adds entries in the catalog for the 6dF survey, or updates v when missing
     """
     from astropy import table
-    from astropy.coordinates import ICRS
+    from astropy.coordinates import SkyCoord
     from astropy.constants import c
 
     ckps = c.to(u.km/u.s).value
 
-    catcoo = ICRS(simplifiedmastercat['RA'].view(np.ndarray)*u.deg, simplifiedmastercat['Dec'].view(np.ndarray)*u.deg)
-    sixdfcoo = ICRS(sixdf['obsra'].view(np.ndarray)*u.deg, sixdf['obsdec'].view(np.ndarray)*u.deg)
+    catcoo = SkyCoord(simplifiedmastercat['RA'].view(np.ndarray)*u.deg, simplifiedmastercat['Dec'].view(np.ndarray)*u.deg)
+    sixdfcoo = SkyCoord(sixdf['obsra'].view(np.ndarray)*u.deg, sixdf['obsdec'].view(np.ndarray)*u.deg)
 
     idx, dd, d3d = sixdfcoo.match_to_catalog_sky(catcoo)
     msk = dd < tol
@@ -540,7 +540,7 @@ def add_6df(simplifiedmastercat, sixdf, tol=1*u.arcmin):
     t = table.vstack([simplifiedmastercat, t], join_type='exact')
 
     #now update anything that *did* match but doesn't have another velocity
-    tcoo = ICRS(t['RA'].view(np.ndarray)*u.deg, t['Dec'].view(np.ndarray)*u.deg)
+    tcoo = SkyCoord(t['RA'].view(np.ndarray)*u.deg, t['Dec'].view(np.ndarray)*u.deg)
 
     idx, dd, d3d = sixdfcoo.match_to_catalog_sky(tcoo)
     msk = dd < tol
@@ -562,7 +562,7 @@ def load_master_catalog(fn='mastercat.dat'):
 def x_match_tests(cattomatch, tol=1*u.arcmin, vcuts=None, basedir='.'):
     """
     Does a bunch of cross-matches with other catalogs. `cattomatch` must be an
-    `ICRS` object or a table.
+    `SkyCoord` object or a table.
 
     This depends on having a bunch of other catalogs in the current directory
     that aren't in the git repo, so you may want to just ask Erik if you want
@@ -580,13 +580,13 @@ def x_match_tests(cattomatch, tol=1*u.arcmin, vcuts=None, basedir='.'):
 
     import RC3
     from astropy.io import ascii, fits
-    from astropy.coordinates import ICRS
+    from astropy.coordinates import SkyCoord
 
     from astropy.constants import c
 
     if cattomatch.__class__.__name__.lower() == 'table':
         ra, dec = cattomatch['RA'], cattomatch['Dec']
-        cattomatch = ICRS(u.Unit(ra.unit)*ra.view(np.ndarray), u.Unit(dec.unit)*dec.view(np.ndarray))
+        cattomatch = SkyCoord(u.Unit(ra.unit)*ra.view(np.ndarray), u.Unit(dec.unit)*dec.view(np.ndarray))
 
     rc3, rc3_coo = RC3.load_rc3()
     rc3wv = rc3[~rc3['cz'].mask]
@@ -598,21 +598,21 @@ def x_match_tests(cattomatch, tol=1*u.arcmin, vcuts=None, basedir='.'):
 
     a3de = ascii.read(join(basedir,'atlas3d_e.dat'), data_start=3, format='fixed_width')
     a3dsp = ascii.read(join(basedir,'atlas3d_sp.dat'), data_start=3, format='fixed_width')
-    a3de_coo = ICRS(u.deg*a3de['RA'], u.deg*a3de['DEC'])
-    a3dsp_coo = ICRS(u.deg*a3dsp['RA'], u.deg*a3dsp['DEC'])
+    a3de_coo = SkyCoord(u.deg*a3de['RA'], u.deg*a3de['DEC'])
+    a3dsp_coo = SkyCoord(u.deg*a3dsp['RA'], u.deg*a3dsp['DEC'])
 
     nsah = ascii.read(join(basedir,'hosts.dat'))
-    nsah_coo = ICRS(u.hourangle*nsah['RA'], u.deg*nsah['DEC'])
+    nsah_coo = SkyCoord(u.hourangle*nsah['RA'], u.deg*nsah['DEC'])
 
     sixdf = ascii.read(join(basedir,'6dF.csv'),guess=False,delimiter=',')
-    sixdf_coo = ICRS(u.deg*sixdf['obsra'], u.deg*sixdf['obsdec'])
+    sixdf_coo = SkyCoord(u.deg*sixdf['obsra'], u.deg*sixdf['obsdec'])
     if vcuts:
         msk = sixdf['z_helio'] < (vcuts/c).decompose().value
         sixdf = sixdf[msk]
         sixdf_coo = sixdf_coo[msk]
 
     zcat = fits.getdata(join(basedir,'zcat.fits'))
-    zcat_coo = ICRS(u.deg*zcat['_RAJ2000'], u.deg*zcat['_DEJ2000'])
+    zcat_coo = SkyCoord(u.deg*zcat['_RAJ2000'], u.deg*zcat['_DEJ2000'])
     if vcuts:
         msk = (zcat['Vh'] < (vcuts).to(u.km/u.s).value)
         msk = msk & (zcat['Vh'] > -1000)  #get rid of those w/o velocities
@@ -805,7 +805,7 @@ def remove_from_list(lst, toremove, tol=0.03*u.arcsec, erroronnomatch=True):
     import requests
 
     from astropy.io import ascii
-    from astropy.coordinates import ICRS
+    from astropy.coordinates import SkyCoord
 
     csvurl = REMOVE_LIST_URLS.get(toremove, None)
 
@@ -824,8 +824,8 @@ def remove_from_list(lst, toremove, tol=0.03*u.arcsec, erroronnomatch=True):
 
     removelst = ascii.read(csv)
 
-    removecoo = ICRS(removelst['RA']*u.deg, removelst['DEC']*u.deg)
-    lstcoo = ICRS(lst['RA']*u.deg, lst['Dec']*u.deg)
+    removecoo = SkyCoord(removelst['RA']*u.deg, removelst['DEC']*u.deg)
+    lstcoo = SkyCoord(lst['RA']*u.deg, lst['Dec']*u.deg)
 
     idx, d2d, d3d = removecoo.match_to_catalog_sky(lstcoo)
     nomtch = d2d > tol
@@ -842,7 +842,8 @@ def remove_from_list(lst, toremove, tol=0.03*u.arcsec, erroronnomatch=True):
     return lst[msk]
 
 
-def upload_table_to_google(table, ssname, wsname, googleun=None, googlepasswd=None):
+def upload_table_to_google(table, ssname, wsname, googleun=None, googlepasswd=None,
+                           splitupdatenum=45000, verbose=True):
     """
     Uploads a table to a google spreadsheet.
 
@@ -864,6 +865,12 @@ def upload_table_to_google(table, ssname, wsname, googleun=None, googlepasswd=No
         Your Google account password.  If None, will (securely) prompt at the
         command line.  Note that this will *not* work in the IPython notebook
         until v3.0
+    splitupdatenum : int
+        The number of cells to update at a time.  Google seems to limit updates
+        to 50k or so.  So including this this just splits it over multiple
+        sessions.
+    verbose : bool
+        If True, prints informational messages along the way.
 
     Returns
     -------
@@ -897,6 +904,8 @@ def upload_table_to_google(table, ssname, wsname, googleun=None, googlepasswd=No
             create_new_ws = True
 
     if create_new_ws:
+        if verbose:
+            print('Creating new worksheet "{0}"'.format(wsname))
         ws = ss.add_worksheet(wsname, len(table) + 1, len(table.columns))
     else:
         if isinstance(wsname, int):
@@ -907,6 +916,8 @@ def upload_table_to_google(table, ssname, wsname, googleun=None, googlepasswd=No
             raise TypeError('Could not find worksheet "{0}"'.format(wsname))
         ws.resize(len(table) + 1, len(table.columns))
 
+    if verbose:
+        print('Getting all the cells to update')
     cells = ws.range(ws.get_addr_int(1, 1) + ':' + ws.get_addr_int(len(table) + 1, len(table.columns)))
 
     firstrow = {}
@@ -928,14 +939,29 @@ def upload_table_to_google(table, ssname, wsname, googleun=None, googlepasswd=No
             # normally iterating over numpy arrays is a bad thing (TM), but in
             # this case we have to access each cell object anyway, so it's not
             # that much more expensive
-            colcells[j].value = elem
+            if elem is np.ma.masked:
+                colcells[j].value = ' '
+            else:
+                colcells[j].value = elem
 
     # the objects in `cells` are updated in-place above, so they have the
     # values we want even though the `cells` variable was only used in the first
     # for loop
-    ws.update_cells(cells)
 
-    #try to infer the
+    if len(cells) <= splitupdatenum:
+        if verbose:
+            print('Updating all the cells at once')
+        ws.update_cells(cells)
+    else:
+        onidx = 0
+        while onidx < len(cells):
+            if verbose:
+                print('Updating', splitupdatenum, 'cells starting on', onidx, 'out of', len(cells))
+                sys.stdout.flush()
+            ws.update_cells(cells[onidx:(onidx + splitupdatenum)])
+            onidx += splitupdatenum
+
+    #try to infer the URL needed to view the worksheet
     try:
         exporturl = ws._element.find("*/[@rel='http://schemas.google.com/spreadsheets/2006#exportcsv']").get('href')
         return exporturl.replace('&format=csv', '').replace('export?', 'view#')
@@ -996,7 +1022,7 @@ def main(outfn=None, uploadtogoogle=False, quiet=False, catalogdir='.'):
         print('Using local MasterRemove.csv file')
         mastercat = remove_from_list(mastercatprerem, 'MasterRemove.csv')
     else:
-        print('Using master remove list from the internet/google spreadsheet')
+        print('Using master remove list from the google spreadsheet')
         mastercat = remove_from_list(mastercatprerem, 'master')
     print('Remove list removed', len(mastercatprerem) - len(mastercat), 'objects')
 
