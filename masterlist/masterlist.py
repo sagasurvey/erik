@@ -842,7 +842,110 @@ def remove_from_list(lst, toremove, tol=0.03*u.arcsec, erroronnomatch=True):
     return lst[msk]
 
 
-def main(outfn, quiet=False, catalogdir='.'):
+def upload_table_to_google(table, ssname, wsname, googleun=None, googlepasswd=None):
+    """
+    Uploads a table to a google spreadsheet.
+
+    Parameters
+    ----------
+    table : astropy Table
+        A table to upload to a google worksheet.
+    ssname : str
+        The name of the google doc (spreadsheet) to upload to.
+    wsname : str or int
+        The name of the *worksheet* to upload to (case-sensitive).
+        Or, if an integer, the key for the worksheet (from the URL when looking
+        at the spreadsheet in the browser, after "gid=").  Note that google
+        seems to be changing how the keys work, though, so that might not work
+        long-term.
+    googleun : str or None
+        Your Google account username.  If None, will prompt at the command line.
+    googlepasswd : str or None
+        Your Google account password.  If None, will (securely) prompt at the
+        command line.  Note that this will *not* work in the IPython notebook
+        until v3.0
+
+    Returns
+    -------
+    ssurl : str
+        The URL of the spreadsheet so that you can look at it
+    """
+    import datetime
+    from warnings import warn
+
+    import gspread
+    from getpass import getpass
+
+    if googleun is None:
+        googleun = raw_input('Google username: ')
+    if googlepasswd is None:
+        googlepasswd = getpass()
+
+    #replace {date} or {datetime} in the worksheet name with the relevant string
+    if '{' in wsname:
+        dtnow = datetime.datetime.now()
+        dts = {'datetime': str(dtnow), 'date': str(dtnow.date())}
+        wsname = wsname.format(**dts)
+
+    c = gspread.login(googleun, googlepasswd)
+    ss = c.open(ssname)
+
+    #now check if a worksheet with the requested name already exists
+    create_new_ws = False
+    if isinstance(wsname, basestring):
+        if wsname not in [ws.title for ws in ss.worksheets()]:
+            create_new_ws = True
+
+    if create_new_ws:
+        ws = ss.add_worksheet(wsname, len(table) + 1, len(table.columns))
+    else:
+        if isinstance(wsname, int):
+            ws = ss.get_worksheet(wsname)
+        elif isinstance(wsname, basestring):
+            ws = ss.worksheet(wsname)
+        else:
+            raise TypeError('Could not find worksheet "{0}"'.format(wsname))
+        ws.resize(len(table) + 1, len(table.columns))
+
+    cells = ws.range(ws.get_addr_int(1, 1) + ':' + ws.get_addr_int(len(table) + 1, len(table.columns)))
+
+    firstrow = {}
+    colcellsdct = {}
+    for c in cells:
+        if c.col not in colcellsdct:
+            colcellsdct[c.col] = list()
+            firstrow[c.col] = c
+        else:  # this else *skips* the first row, which should be the label
+            colcellsdct[c.col].append(c)
+
+    for i, colnm in enumerate(table.colnames):
+        col = table[colnm]
+        coli = i + 1
+
+        firstrow[coli].value = col.name
+        colcells = colcellsdct[coli]
+        for j, elem in enumerate(col):
+            # normally iterating over numpy arrays is a bad thing (TM), but in
+            # this case we have to access each cell object anyway, so it's not
+            # that much more expensive
+            colcells[j].value = elem
+
+    # the objects in `cells` are updated in-place above, so they have the
+    # values we want even though the `cells` variable was only used in the first
+    # for loop
+    ws.update_cells(cells)
+
+    #try to infer the
+    try:
+        exporturl = ws._element.find("*/[@rel='http://schemas.google.com/spreadsheets/2006#exportcsv']").get('href')
+        return exporturl.replace('&format=csv', '').replace('export?', 'view#')
+    except:
+        warn('Failed to figure out the URL automatically, so returning the '
+             'spreadsheet and worksheet names')
+        return wsname, ssname
+
+
+def main(outfn=None, uploadtogoogle=False, quiet=False, catalogdir='.'):
     from os.path import join, exists
 
     if quiet:
@@ -854,21 +957,21 @@ def main(outfn, quiet=False, catalogdir='.'):
         del __builtin__  # so it doesn't get passed in the return statement
 
     print("Loading LEDA catalog...")
-    leda = load_edd_csv(join(catalogdir,'LEDA.csv'))
+    leda = load_edd_csv(join(catalogdir, 'LEDA.csv'))
     print("Loading 2MRS catalog...")
-    twomass = load_edd_csv(join(catalogdir,'2MRS.csv'))
+    twomass = load_edd_csv(join(catalogdir, '2MRS.csv'))
     print("Loading EDD catalog...")
-    edd = load_edd_csv(join(catalogdir,'EDD.csv'))
+    edd = load_edd_csv(join(catalogdir, 'EDD.csv'))
     print("Loading KK nearby catalog...")
-    kknearby = load_edd_csv(join(catalogdir,'KKnearbygal.csv'))
+    kknearby = load_edd_csv(join(catalogdir, 'KKnearbygal.csv'))
     nsa = load_nsa()
     print('Loading 6dF...')
     #6dF is not an EDD catalog, but happens to be the same format
-    sixdf = load_edd_csv(join(catalogdir,'6dF.csv'))
+    sixdf = load_edd_csv(join(catalogdir, '6dF.csv'))
 
-    if os.path.exists(join(catalogdir,'2mass_xsc_irsa.tab')):
+    if os.path.exists(join(catalogdir, '2mass_xsc_irsa.tab')):
         print("Loading 2MASS XSC...")
-        twomassxsc = load_2mass_xsc(join(catalogdir,'2mass_xsc_irsa.tab'))
+        twomassxsc = load_2mass_xsc(join(catalogdir, '2mass_xsc_irsa.tab'))
     else:
         print("Could not find 2MASS XSC file.")
         twomassxsc = None
@@ -909,9 +1012,13 @@ def main(outfn, quiet=False, catalogdir='.'):
         oldmpo = str(np.ma.masked_print_option)
         try:
             np.ma.masked_print_option.set_display('')
-            mastercat.write(outfn, format='ascii', delimiter=',')
+            mastercat.write(outfn, format='ascii', delimiter=', ')
         finally:
             np.ma.masked_print_option.set_display(oldmpo)
+
+    if uploadtogoogle:
+        url = upload_table_to_google(mastercat, 'Master list', 'Master catalog ({datetime})')
+        print('Master catalog uploaded to spreadsheet: ' + str(url))
 
     return locals()  # so that it can be in an ipython session
 
@@ -920,7 +1027,11 @@ if __name__ == '__main__':
 
     p = argparse.ArgumentParser()
     p.add_argument('-q', '--quiet', action='store_true')
-    p.add_argument('outfn', nargs='?', help="If this is not given, the catalog won't be saved", default=None)
+    p.add_argument('-o', '--outfn', help="A file to save the master catalog to."
+                                         " (If this is not given, the catalog"
+                                         " won't be saved)", default=None)
+    p.add_argument('-g', '--uploadtogoogle', action='store_true', help="Upload "
+                   "to google docs.  Will prompt for username and password.")
     args = p.parse_args()
 
     locals().update(main(**args.__dict__))
