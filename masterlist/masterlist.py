@@ -940,7 +940,7 @@ def upload_table_to_google(table, ssname, wsname, googleun=None, googlepasswd=No
             # this case we have to access each cell object anyway, so it's not
             # that much more expensive
             if elem is np.ma.masked:
-                colcells[j].value = ' '
+                colcells[j].value = ''
             else:
                 colcells[j].value = elem
 
