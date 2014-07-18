@@ -1043,7 +1043,7 @@ def main(outfn=None, uploadtogoogle=False, quiet=False, catalogdir='.'):
             np.ma.masked_print_option.set_display(oldmpo)
 
     if uploadtogoogle:
-        url = upload_table_to_google(mastercat, 'Master list', 'Master catalog ({datetime})')
+        url = upload_table_to_google(mastercat, 'Master list', 'Master catalog ({date})')
         print('Master catalog uploaded to spreadsheet: ' + str(url))
 
     return locals()  # so that it can be in an ipython session
