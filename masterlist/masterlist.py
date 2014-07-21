@@ -381,6 +381,11 @@ def simplify_catalog(mastercat, quickld=True):
     tab.add_column(table.MaskedColumn(name='K', data=mastercat['K_tc']))
     tab.add_column(table.MaskedColumn(name='K_err', data=mastercat['e_K']))
 
+    #Stellar mass/SFR
+    tab.add_column(table.MaskedColumn(name='M_star', data=mastercat['MASS'] * (WMAP9.H(0).value/100)**-2 ))
+    tab.add_column(table.MaskedColumn(name='SFR_B300', data=mastercat['B300']))
+    tab.add_column(table.MaskedColumn(name='SFR_B1000', data=mastercat['B1000']))
+
     return tab
 
 
