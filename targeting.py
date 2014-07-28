@@ -381,7 +381,7 @@ def usno_vs_sdss_offset(sdsscat, usnocat, plots=False, raiseerror=0.5):
 
     dres = np.hypot(np.median(dra2) / cdec, np.median(ddec2))
     if raiseerror is not None and ((dres * 3600) > raiseerror):
-        raise ValueError('median separation from USNO to SDSS is {0} arcsec'.format(np.median(d) * 3600))
+        raise ValueError('median separation from USNO to SDSS is {0} arcsec'.format(dres * 3600))
 
     return np.median(dra2), np.median(ddec2)
 

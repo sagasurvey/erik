@@ -132,7 +132,8 @@ def select_sky_positions(host, nsky=250, sdsscat=None, usnocat=None, nearnesslim
 
 
 def construct_master_catalog(host, fnout=None, targetcat={}, fopcat=None,
-    skyradec=None, faintlimit=None, fibermaglimit=None, orderby=None):
+    skyradec=None, faintlimit=None, fibermaglimit=None, orderby=None,
+    usnosdssoffsettol=0.5):
     """
     This function produces the "master" catalog for each host for WIYN/hydra
     observations. The master catalog contains lines for all the objects/sky/fops
@@ -167,6 +168,9 @@ def construct_master_catalog(host, fnout=None, targetcat={}, fopcat=None,
         prefixed with '-', it's in *decreasing* order, otherwise increasing
         (i.e., without '-', smallest number first).  The special 'lowphotz'
         means to change order to blocks of [photz<.1, nophotz, photz>.1]
+    usnosdssoffsettol : float
+        The number of arcseconds median offset acceptable between the SDSS and
+        USNO-B frames
 
     Returns
     -------
@@ -232,7 +236,9 @@ def construct_master_catalog(host, fnout=None, targetcat={}, fopcat=None,
         skyradec = skyradec[0][:2000], skyradec[1][:2000]
 
     #determine the SDSS vs. USNO offset
-    dra, ddec = usno_vs_sdss_offset(host.get_sdss_catalog(), host.get_usnob_catalog())
+    dra, ddec = usno_vs_sdss_offset(host.get_sdss_catalog(),
+                                    host.get_usnob_catalog(),
+                                    raiseerror=usnosdssoffsettol)
     print 'USNO/SDSS offsets:', dra * 3600, ddec * 3600
 
     if os.path.exists(fnout):
