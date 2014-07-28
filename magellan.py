@@ -99,7 +99,7 @@ OBJFILE  {catfile}
 
 def build_imacs_targeting_files(host, observername, date='2013-02-15',
                                 onlygals=True, refmagrange={'r': (17, 19)},
-                                overwrite=False, selectkws={}):
+                                overwrite=False, selectkws={}, targs=None):
     """
     Generates the target catalog and initial observation file for IMACS
 
@@ -122,6 +122,12 @@ def build_imacs_targeting_files(host, observername, date='2013-02-15',
         be raised if the files are present.
     selectkws : dict
         Keywords to be passed into `targeting.select_targets`
+    targs : astropy.table.Table
+        The target list to use.  If given, will override `selectkws` and
+        `targeting.select_targets` will be ignored.  Format should be the same
+        as `targeting.select_targets`'s output - needs to have 'objID, 'type',
+        'ra', 'dec', and 'r'.  If the column 'imacs_pri' is present, that
+        will be included as a priority for the object
 
     """
     import os
@@ -130,9 +136,12 @@ def build_imacs_targeting_files(host, observername, date='2013-02-15',
     from astropy.time import Time
     from astropy import units as u
 
-    cat = host.get_sdss_catalog()  # needed for ref stars
+    if targs is None:
+        targs = targeting.select_targets(host, **selectkws)
+    elif selectkws:
+            raise ValueError('Cannot give both `targs` and `selectkws` arguments')
 
-    targs = targeting.select_targets(host, **selectkws)
+    cat = host.get_sdss_catalog()  # needed for ref stars
 
     if onlygals:
         galmsk = targs['type'] == 3
@@ -158,9 +167,15 @@ def build_imacs_targeting_files(host, observername, date='2013-02-15',
 
     with open(fncat, 'w') as f:
         f.write('&RADEGREE\n')
-        f.write('@{0} {1} {2} -10\n'.format(host.name, host.ra, host.dec))
-        for t in targs:
-            f.write('@{0} {1} {2} {3}\n'.format(*[t[n] for n in 'objID,ra,dec,r'.split(',')]))
+        f.write('@{0} {1} {2} -10 Pri=0\n'.format(host.name, host.ra, host.dec))
+        if 'imacs_pri' in targs.colnames:
+            for t in targs:
+                f.write('@{0} {1} {2} {3}\n'.format(*[t[n] for n in
+                        'objID,ra,dec,r'.split(',')]))
+        else:
+            for t in targs:
+                f.write('@{0} {1} {2} {3} Pri={4}\n'.format(*[t[n] for n in
+                        'objID,ra,dec,r,imacs_pri'.split(',')]))
 
         #now the reference stars
         for t in cat[refmsk]:
