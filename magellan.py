@@ -3,6 +3,8 @@ from __future__ import division, print_function
 import numpy as np
 from matplotlib import pyplot as plt
 
+from astropy import units as u
+
 """
 These functions are for the SAGA project Magellan-related spectroscopic mask
 design.
@@ -14,7 +16,7 @@ How to design IMACS masks:
 1. Generate the target list using `build_imacs_targeting_files`.  This will put
    a catalog and initial .obs file in the ``imacs_targets`` directory.
 2. Open 2 terminals, and in both, cd into ``imacs_targets`` and do
-   ``source ../imacs.envars``
+   ``source ../imacs/imacs.envars``
    (Note that you will probably need to update that file, as it's currently
     based on paths to Magellan-related code for Erik's computer)
 3. Do "intgui -k <field>_ini.obs" in one of the terminals
@@ -81,14 +83,14 @@ TITLE   {title}
 CENTER   {cenra} {cendec}
 EQUINOX  2000.00000
 POSITION 0.00000
-WLIMIT  3500.0 9700.0
-Wavelength  6749.28
+WLIMIT  4500.0 9000.0{dlimit}
+Wavelength  6749.28{pdecide}
 TELESCOPE  Magellan
 INSTRUMENT IMACS_sc
 DISPERSER  IMACS_grism_300
 SLITSIZE  1.000 3.000 3.000 0.000
 REFHOLE   5.000 1 2.500 2.500 0.000
-EXORDER  0
+EXORDER  3
 REPOBJ  0
 REFLIMIT 12
 DATE {obsmjd}
@@ -99,7 +101,8 @@ OBJFILE  {catfile}
 
 def build_imacs_targeting_files(host, observername, date='2013-02-15',
                                 onlygals=True, refmagrange={'r': (17, 19)},
-                                overwrite=False, selectkws={}, targs=None):
+                                overwrite=False, selectkws={}, targs=None,
+                                pdecide=None, weakdlimit=False, inclhost=True):
     """
     Generates the target catalog and initial observation file for IMACS
 
@@ -128,7 +131,13 @@ def build_imacs_targeting_files(host, observername, date='2013-02-15',
         as `targeting.select_targets`'s output - needs to have 'objID, 'type',
         'ra', 'dec', and 'r'.  If the column 'imacs_pri' is present, that
         will be included as a priority for the object
-
+    pdecide : float or None
+        The priority to use as 'PDECIDE', or None to go with the default
+    weakdlimit : bool
+        If True, set the 'DLIMIT' such that only the center wl (6750) is forced
+        to be on the detector.
+    inclhost : bool
+        If True, always add a (priority 0) target for the host.
     """
     import os
     import targeting
@@ -167,15 +176,18 @@ def build_imacs_targeting_files(host, observername, date='2013-02-15',
 
     with open(fncat, 'w') as f:
         f.write('&RADEGREE\n')
-        f.write('@{0} {1} {2} -10 Pri=0\n'.format(host.name, host.ra, host.dec))
+
+        if inclhost:
+            f.write('@{0} {1} {2} -10 Pri=0\n'.format(host.name, host.ra, host.dec))
+
         if 'imacs_pri' in targs.colnames:
-            for t in targs:
-                f.write('@{0} {1} {2} {3}\n'.format(*[t[n] for n in
-                        'objID,ra,dec,r'.split(',')]))
-        else:
             for t in targs:
                 f.write('@{0} {1} {2} {3} Pri={4}\n'.format(*[t[n] for n in
                         'objID,ra,dec,r,imacs_pri'.split(',')]))
+        else:
+            for t in targs:
+                f.write('@{0} {1} {2} {3}\n'.format(*[t[n] for n in
+                        'objID,ra,dec,r'.split(',')]))
 
         #now the reference stars
         for t in cat[refmsk]:
@@ -192,7 +204,9 @@ def build_imacs_targeting_files(host, observername, date='2013-02-15',
         cendec=hdec.format(u.degree, precision=2, sep=':', pad=True),
         observer=observername,
         obsmjd=obsmjd,
-        catfile=host.shortname + '.cat')
+        catfile=host.shortname + '.cat',
+        pdecide='' if pdecide is None else ('\nPDECIDE {0:.2f}'.format(pdecide)),
+        dlimit='\nDLIMIT 5000 7500' if weakdlimit else '')
 
     with open(fnobs, 'w') as f:
         f.write(obsfile)
@@ -341,7 +355,8 @@ def get_smf_entries(fn, inclholes=False):
 
 
 def plot_imacs_masks(host, clf=True, save=False, eastleft=False, altname=None,
-                     skipnums=[]):
+                     skipnums=[], plotpris=False, showrvir=False,
+                     showfootprint=False):
     from glob import glob
 
     smfs = glob('imacs_targets/{0}_*.SMF'.format(host.shortname))
@@ -355,31 +370,78 @@ def plot_imacs_masks(host, clf=True, save=False, eastleft=False, altname=None,
         plt.clf()
 
     #catalog of everything
+    nms = []
     ras = []
     decs = []
+    pris = []
     with open('imacs_targets/{0}.cat'.format(host.shortname)) as f:
         for l in f:
             if l[0] == '@':
-                ra, dec = l.split()[1:3]
+                nm, ra, dec = l.split()[:3]
+                nms.append(nm[1:])
                 ras.append(float(ra))
                 decs.append(float(dec))
-    plt.plot(ras, decs, '.k', label='All', ms=1, alpha=.6)
+                if 'Pri=' in l:
+                    pris.append(float(l[l.index('Pri=')+4:].split()[0]))
+                else:
+                    pris.append(None)
+    nms = np.array(nms)
+    ras = np.array(ras)
+    decs = np.array(decs)
+    pris = np.array(pris)
+
+    if np.any(plotpris):
+        if plotpris is True:
+            plotpris = np.unique(pris)
+        for pri in np.sort(plotpris):
+            msk = pris == pri
+            plt.plot(ras[msk], decs[msk], '.', ms=2, alpha=.7, label='Pri={0}, n={1}'.format(pri, msk.sum()))
+    else:
+        plt.plot(ras, decs, '.k', label='All', ms=1, alpha=.6)
 
     n = 0
+    label = 'Have slits ($n_{{\\rm mask}}={0}$)'.format(len(smfs))
+    allnms = []
     for fn in smfs:
         msknum = int(fn.split('_')[-1].split('.')[0])
         if msknum in skipnums:
             continue
         nmi, rai, deci = get_smf_entries(fn)
+        allnms.extend(nmi)
+        if np.any(plotpris):
+            plt.plot(rai, deci, '.r', ms=8, alpha=.8, label=label)
+            label = ''
+        else:
+            label = str(msknum)
+            plt.plot(rai, deci, '.', ms=5, alpha=.8, label=label)
 
-        plt.plot(rai, deci, '.', ms=5, alpha=.8, label=str(msknum))
-
-        n += len(rai)
-    print('Total targets=', n)
+    print('Total targets already observed=', len(allnms))
+    if np.any(plotpris):
+        obspris = pris[np.in1d(nms, allnms)]
+        print('Priority distribution of slitted targets:')
+        ipri = 1
+        for pri in np.unique(pris):
+            ntarg = np.sum(obspris==pri)
+            nrem = np.sum(pris==pri) - np.sum(obspris==pri)
+            print('Priority', pri, ':', ntarg, 'targeted,', nrem, 'remaining')
+            if pri<=2:
+                msg = 'Targeted {0} of {1} Pri {3} objects: {2:.0f}%'
+                txt = msg.format(ntarg, ntarg+nrem, 100*ntarg/(ntarg+nrem), pri)
+                plt.text(0.05, 0.025*ipri, txt, transform=plt.gca().transAxes)
+                ipri+=1
 
     plt.xlabel('RA [deg]')
     plt.ylabel('Dec [deg]')
-    plt.legend(loc=0)
+    plt.legend(loc='upper left')
+
+    if showrvir:
+        circle = plt.Circle((host.ra, host.dec), host.physical_to_projected(300*u.kpc).to(u.deg).value, color='k', lw=2)
+        plt.gca().add_artist(circle)
+
+    if showfootprint:
+        fov = (27.2*u.arcmin).to(u.deg).value
+        footprint = plt.Rectangle((host.ra-fov/2, host.dec-fov/2), fov, fov, color='r', lw=2, fc='none')
+        plt.gca().add_artist(footprint)
 
     if eastleft:
         plt.xlim(max(plt.xlim()), min(plt.xlim()))
