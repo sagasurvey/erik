@@ -178,7 +178,7 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
         with open(fnout, 'w') as f:
             f.write(catstr)
 
-    tab = Table(names=catlines[0].split('\t'), dtypes=['f', 'f', 'S50', 'S2', 'S20', 'f'])
+    tab = Table(names=catlines[0].split('\t'), dtype=['f', 'f', 'S50', 'S2', 'S20', 'f'])
     for e in tabentries:
         e[0] = Angle(e[0], unit=u.hour).degree
         e[1] = Angle(e[1], unit=u.degree).degree
