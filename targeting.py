@@ -414,7 +414,7 @@ def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
     posttoimglist : bool or float
         If True, makes a form to post to the URL site. If a float, gives the
         number of seconds to wait until deleting the temporary file (to gives
-        the browser time to load)
+        the browser time to load).
 
     Returns
     -------
