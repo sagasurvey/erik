@@ -12,7 +12,7 @@ from matplotlib import pyplot as plt
 from astropy import units as u
 
 
-SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss3.org/dr10/en/tools/chart/list.aspx'
+SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss.org/dr12/en/tools/chart/list.aspx'
 
 # the color cuts specified in the BOSSANOVA proposal
 bossanova_color_cuts = {'g-r': (None, 1.3), 'r-i': (None, 0.7)}

@@ -7,7 +7,7 @@ import numpy as np
 import targeting
 from astropy import units as u
 
-from astropy.coordinates import Angle
+from astropy.coordinates import Angle, SkyCoord
 from astropy.table import Table
 
 
@@ -40,8 +40,8 @@ def make_catalog(host, fnout=None, targetfaintlim=(21.,22.), targetoutercutrad=3
 
 
     #add the host as the first entry
-    rastr = Angle(host.ra, 'deg').format('hr', sep=':', precision=3)
-    decstr = Angle(host.dec, 'deg').format('deg', sep=':', precision=3)
+    rastr = Angle(host.ra, 'deg').to_string('hr', sep=':', precision=3)
+    decstr = Angle(host.dec, 'deg').to_string('deg', sep=':', precision=3)
     mag = '{0:.2f}'.format(host.r + host.distmod)
 
     tabentries.append([rastr, decstr, host.name, str(hostrank), 'TARGET', mag])
@@ -124,13 +124,17 @@ def colorcut_mask(targets, colorcut):
 
 
 def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxrank=1,
-                     fluxrng=(17., 17.7), repeatflux=1, guidestarmagrng=(14, 15)):
+                     fluxrng=(17., 17.7), repeatflux=1, guidestarmagrng=(14, 15),
+                     removefluxdistance=None):
     """
     given a host object `host`, an SDSS target catalog `targs`, and ranks for
     those targets `targetranks`, output the Hectospec catalog Table and (if
     `fnout` isn't None), save to disk in hectospec format.
 
     `fluxfnout` specifies a file to output the list of flux/calib stars to.
+
+    `removefluxdistance` is the distance out to which to remove flux stars if
+    they are near program stars (or None to skip this step).
     """
     tabentries = []
     catlines = ['ra\tdec\tobject\trank\ttype\tmag',
@@ -139,8 +143,8 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
     #entries for the actual targets
     print 'Including', len(targs), 'targets'
     for i, (t, rank) in enumerate(zip(targs, targetranks)):
-        rastr = Angle(t['ra'], 'deg').format('hr', sep=':', precision=3)
-        decstr = Angle(t['dec'], 'deg').format('deg', sep=':', precision=3)
+        rastr = Angle(t['ra'], 'deg').to_string('hr', sep=':', precision=3)
+        decstr = Angle(t['dec'], 'deg').to_string('deg', sep=':', precision=3)
         objnm = str(t['objID'])
         mag = '{0:.2f}'.format(t['r'])
 
@@ -151,9 +155,18 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
     fluxtargs = select_flux_stars(host.get_sdss_catalog(), fluxrng,
                                   fluxfnout=fluxfnout)
     print 'Found', len(fluxtargs), 'Flux stars'
+    if removefluxdistance is not None:
+        fluxsc = SkyCoord(fluxtargs['ra']*u.deg, fluxtargs['dec']*u.deg)
+        targsc = SkyCoord(targs['ra']*u.deg, targs['dec']*u.deg)
+        idx, d2d, d3d = fluxsc.match_to_catalog_sky(targsc)
+        fluxsepmsk = d2d > removefluxdistance
+        if np.sum(~fluxsepmsk) > 0:
+            print 'Removing', np.sum(~fluxsepmsk), 'Flux stars too close to program stars'
+            fluxtargs = fluxtargs[fluxsepmsk]
+
     for t in fluxtargs:
-        rastr = Angle(t['ra'], 'deg').format('hr', sep=':', precision=3)
-        decstr = Angle(t['dec'], 'deg').format('deg', sep=':', precision=3)
+        rastr = Angle(t['ra'], 'deg').to_string('hr', sep=':', precision=3)
+        decstr = Angle(t['dec'], 'deg').to_string('deg', sep=':', precision=3)
         objnm = str(t['objID'])
         mag = '{0:.2f}'.format(t['r'])
 
@@ -165,8 +178,8 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
     guidestars = select_guide_stars(host.get_sdss_catalog(), guidestarmagrng)
     print 'Found', len(guidestars), 'guide stars'
     for t in guidestars:
-        rastr = Angle(t['ra'], 'deg').format('hr', sep=':', precision=3)
-        decstr = Angle(t['dec'], 'deg').format('deg', sep=':', precision=3)
+        rastr = Angle(t['ra'], 'deg').to_string('hr', sep=':', precision=3)
+        decstr = Angle(t['dec'], 'deg').to_string('deg', sep=':', precision=3)
         objnm = str(t['objID'])
         mag = '{0:.2f}'.format(t['r'])
 
