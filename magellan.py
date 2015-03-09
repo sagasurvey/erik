@@ -99,7 +99,7 @@ OBJFILE  {catfile}
 """
 
 
-def build_imacs_targeting_files(host, observername, date='2013-02-15',
+def build_imacs_targeting_files(host, observername, date=None,
                                 onlygals=True, refmagrange={'r': (17, 19)},
                                 overwrite=False, selectkws={}, targs=None,
                                 pdecide=None, weakdlimit=False, inclhost=True):
@@ -153,8 +153,11 @@ def build_imacs_targeting_files(host, observername, date='2013-02-15',
     cat = host.get_sdss_catalog()  # needed for ref stars
 
     if onlygals:
-        galmsk = targs['type'] == 3
-        targs = targs[galmsk]
+        if 'type' in targs.colnames:
+            galmsk = targs['type'] == 3
+            targs = targs[galmsk]
+        else:
+            print('onlygals was set, but no "type" in the catalog.  Not cutting.')
 
     refmsk = np.ones(len(cat), dtype=bool)
     for band in 'gri':
@@ -200,8 +203,8 @@ def build_imacs_targeting_files(host, observername, date='2013-02-15',
     obsmjd = int(Time(date, scale='utc').mjd)
 
     obsfile = _obsfile_template.format(title=host.shortname+'_ini',
-        cenra=hra.format(u.hour, precision=3, sep=':', pad=True),
-        cendec=hdec.format(u.degree, precision=2, sep=':', pad=True),
+        cenra=hra.to_string(u.hour, precision=3, sep=':', pad=True),
+        cendec=hdec.to_string(u.degree, precision=2, sep=':', pad=True),
         observer=observername,
         obsmjd=obsmjd,
         catfile=host.shortname + '.cat',
@@ -357,6 +360,8 @@ def get_smf_entries(fn, inclholes=False):
 def plot_imacs_masks(host, clf=True, save=False, eastleft=False, altname=None,
                      skipnums=[], plotpris=False, showrvir=False,
                      showfootprint=False):
+    import itertools
+    import matplotlib
     from glob import glob
 
     smfs = glob('imacs_targets/{0}_*.SMF'.format(host.shortname))
@@ -364,7 +369,8 @@ def plot_imacs_masks(host, clf=True, save=False, eastleft=False, altname=None,
         smfs.extend(glob('imacs_targets/{0}_*.SMF'.format(altname)))
     smfs = dict([(int(smf.split('_')[-1].split('.')[0]), smf) for smf in smfs])
     smfs = [smfs[i] for i in sorted(smfs)]
-    print(smfs)
+    if len(smfs)>0:
+        print(smfs)
 
     if clf:
         plt.clf()
@@ -393,11 +399,12 @@ def plot_imacs_masks(host, clf=True, save=False, eastleft=False, altname=None,
     if np.any(plotpris):
         if plotpris is True:
             plotpris = np.unique(pris)
+        ccycle = itertools.cycle(matplotlib.rcParams['axes.color_cycle'])
         for pri in np.sort(plotpris):
             msk = pris == pri
-            plt.plot(ras[msk], decs[msk], '.', ms=2, alpha=.7, label='Pri={0}, n={1}'.format(pri, msk.sum()))
+            plt.scatter(ras[msk], decs[msk], s=6, c=ccycle.next(), edgecolor='none', alpha=.7, label='Pri={0}, n={1}'.format(pri, msk.sum()))
     else:
-        plt.plot(ras, decs, '.k', label='All', ms=1, alpha=.6)
+        plt.scatter(ras, decs, label='All', s=4, c='k', edgecolor='none',alpha=.6)
 
     n = 0
     label = 'Have slits ($n_{{\\rm mask}}={0}$)'.format(len(smfs))
@@ -409,11 +416,11 @@ def plot_imacs_masks(host, clf=True, save=False, eastleft=False, altname=None,
         nmi, rai, deci = get_smf_entries(fn)
         allnms.extend(nmi)
         if np.any(plotpris):
-            plt.plot(rai, deci, '.r', ms=8, alpha=.8, label=label)
+            plt.scatter(rai, deci, color='r', s=10, alpha=.8, label=label, edgecolor='k', lw=1)
             label = ''
         else:
             label = str(msknum)
-            plt.plot(rai, deci, '.', ms=5, alpha=.8, label=label)
+            plt.scatter(rai, deci, color='r', s=3, alpha=.7, label=label, edgecolor='none')
 
     print('Total targets already observed=', len(allnms))
     if np.any(plotpris):

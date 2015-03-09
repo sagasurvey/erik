@@ -3,6 +3,7 @@ Defines the hosts for the distant local group project
 """
 from __future__ import division, print_function
 
+import os
 import sys
 
 import numpy as np
@@ -1027,8 +1028,8 @@ def get_saga_hosts():
 
     return hostsd
 
-def get_saga_hosts_from_google(googleusername, googlepasswd=None,
-                               useobservingsummary=False):
+def get_saga_hosts_from_google(googleusername=None, googlepasswd=None,
+                               useobservingsummary=False, cachefile='hosts_dl.pkl'):
     """
     Returns a lost of hosts obtained from querying the google spreadsheet
     "SAGA_Hosts+Satellites".  Currently only works for NSA hosts
@@ -1037,15 +1038,26 @@ def get_saga_hosts_from_google(googleusername, googlepasswd=None,
     ----------
     googleusername : str
         Your google login name, typically your gmail address.
-    passwd : str or None
+    passwd : str or None, or None to use python's getpass to input it.
         Your google passwd, or None to use python's getpass to input it.
     useobservingsummary : bool
         If True, use the "SAGA Observing Summary" spreadsheet, instead.
-
+    cachefile : str or bool
+        If a string, specifies a filename to load the host list from, or if it
+        is absent, the file the loaded data will get saved to.  To clear the
+        cache, just delete the relevant file.
     """
+    import cPickle as pickle
     import getpass
     import gspread
 
+    if os.path.isfile(cachefile):
+        print('Using cached version of google hosts list from file "{0}"'.format(cachefile))
+        with open(cachefile) as f:
+            return pickle.load(f)
+
+    if googleusername is None:
+        googleusername = getpass.getpass('Google username:')
     if googlepasswd is None:
         googlepasswd = getpass.getpass('Password for "{0}":'.format(googleusername))
 
@@ -1107,6 +1119,10 @@ def get_saga_hosts_from_google(googleusername, googlepasswd=None,
             ngcstr = 'NGC' + r[1]
 
             hosts.append(NSAHost(nsanum, [sysname, ngcstr, nsastr]))
+
+    if cachefile:
+        with open(cachefile, 'w') as f:
+            pickle.dump(hosts, f)
 
     return hosts
 
