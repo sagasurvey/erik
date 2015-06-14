@@ -24,7 +24,8 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     galvsallcutoff=20, inclspecqsos=False, removespecstars=True,
     removegalsathighz=True, removegama='now', photflags=True,
     outercutrad=250, innercutrad=20, colorcuts={},
-    randomize=True, removeallsdss=False, fibermagcut=('r', 23)):
+    randomize=True, removeallsdss=False, fibermagcut=('r', 23),
+    morecuts=[]):
     """
     Selects targets from the SDSS catalog.
 
@@ -68,7 +69,8 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     colorcuts: dict of 2-tuples
         A dictionary mapping SDSS colors to the range of colors to accept as
         ``(bluest, reddest)``. E.g., {'g-r': (-1, 2)}.  Default is to do no
-        color cuts.
+        color cuts. dict vals can also be (lower, upper, uncfactor) to allow
+        for an `uncfactor` of the uncertainty padding around the limits
     randomize : bool
         Randomize the order of the catalog and the very end
     removeallsdss : bool
@@ -76,6 +78,9 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     fibermagcut : None or 2-tuple
         a 2-tuple ('band', mag) to remove objects with a fibermag fainter than
         `mag`, or None to do nothing about this.
+    morecuts : list of functions
+        A list of functions that take in the catalog and ouput a mask (True to
+        keep, False to drop).
 
     Returns
     -------
@@ -100,7 +105,21 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
             c1, c2 = k.split('-')
             color = cat[c1] - cat[c2]
 
-            bluec, redc = v
+            if len(v) == 3:
+                bluec, redc, uncfactor = v
+
+                c1e = c1+'_err'
+                if c1e not in cat.colnames:
+                    c1e = c1+'err'
+                c2e = c2+'_err'
+                if c2e not in cat.colnames:
+                    c2e = c2+'err'
+
+                uncfactor = uncfactor * (cat[c1e] + cat[c2e])
+
+            else:
+                uncfactor = 0
+                bluec, redc = v
             if bluec is None:
                 bluec = -float('inf')
             if redc is None:
@@ -109,7 +128,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
             assert bluec < redc, 'blue cut larger than red cut!: ' + str(v)
 
             #this now adds the cuts to the mask for this color
-            colorcutmsk = colorcutmsk & (bluec < color) & (color < redc)
+            colorcutmsk = colorcutmsk & ((bluec-uncfactor) < color) & (color < (redc)+uncfactor)
 
 
     #type==3 is an imaging-classified galaxy - but only do it if you're brighter than galvsallcutoff
@@ -230,7 +249,12 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     if randomize:
         res = res[np.random.permutation(len(res))]
 
-    return res
+    finalmsk = np.ones(len(res), dtype=bool)
+    for cut in morecuts:
+        finalmsk = finalmsk & cut(res)
+    if np.sum(~finalmsk) > 0:
+        print('morecuts removed', np.sum(~finalmsk), 'objects')
+    return res[finalmsk]
 
 
 def find_gama(cat, host, raddeg, tol, matchfuture=True, whichgama='DR1'):

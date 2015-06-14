@@ -271,7 +271,7 @@ class NSAHost(object):
 
     def sdss_environs_query(self, dl=False, usecas=False, magcut=None,
                             inclphotzs=True, applyphotflags=False,
-                            xmatchwise=False):
+                            xmatchwise=False, usepost=False):
         """
         Constructs an SDSS query to get the SDSS objects around this
         host and possibly downloads the catalog.
@@ -300,6 +300,8 @@ class NSAHost(object):
         xmatchwise : bool
             If True, the query will also cross-match against WISE and include w1
             mags.
+        usepost : bool
+            If False, uses GET, otherwise POST
 
         Returns
         -------
@@ -337,7 +339,7 @@ class NSAHost(object):
                         break
             else:
                 msg = 'Downloading NSA ID{0} to {1}'.format(self.nsaid, self.fnsdss)
-                download_sdss_query(query, fn=self.fnsdss, dlmsg=msg,
+                download_sdss_query(query, fn=self.fnsdss, dlmsg=msg, usepost=usepost,
                     inclheader='Environs of NSA Object {0}'.format(self.nsaid))
         else:
             return query
@@ -793,7 +795,15 @@ def construct_sdss_query(ra, dec, radius=1*u.deg, into=None, magcut=None,
         photzdata = photzjoins = ''
 
     if xmatchwise:
-        wisedata = ', ISNULL(W.w1mpro,-99) as w1, ISNULL(W.w1sigmpro, -99) as w1_err'
+        #wisedata = ', ISNULL(W.w1mpro,-99) as w1, ISNULL(W.w1sigmpro, -99) as w1_err'
+        wisedata = ', ' + dedent("""
+        ISNULL(w.j_m_2mass,9999) as J, ISNULL(w.j_msig_2mass,9999) as Jerr,
+        ISNULL(w.H_m_2mass,9999) as H, ISNULL(w.h_msig_2mass,9999) as Herr,
+        ISNULL(w.k_m_2mass,9999) as K, ISNULL(w.k_msig_2mass,9999) as Kerr,
+        ISNULL(w.w1mpro,9999) as w1, ISNULL(w.w1sigmpro,9999) as w1err,
+        ISNULL(w.w2mpro,9999) as w2, ISNULL(w.w2sigmpro,9999) as w2err,
+        ISNULL(w.w3mpro,9999) as w3, ISNULL(w.w3sigmpro,9999) as w3err,
+        ISNULL(w.w4mpro,9999) as w4, ISNULL(w.w4sigmpro,9999) as w4err""")
 
         wisejoins = ('LEFT JOIN WISE_xmatch X ON p.objid = X.sdss_objid\n'
                      'LEFT JOIN wise_allsky W ON x.wise_cntr = W.cntr')
@@ -872,7 +882,7 @@ def construct_usnob_query(ra, dec, radius=1*u.deg, verbosity=1, votable=False, b
 
 
 def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
-                   dlmsg='Downloading...', inclheader=True):
+                   dlmsg='Downloading...', inclheader=True, usepost=False):
     """
     Runs the provided query on the given SDSS `url`, and either returns the
     result or saves it as a file.
@@ -897,6 +907,8 @@ def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
         Whether or not to include a header with information about the query
         in the resulting file.  If a string, that will be at the end of the
         header.
+    usepost : bool
+        If False, uses GET, otherwise POST
 
     Returns
     -------
@@ -923,7 +935,6 @@ def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
     from hosts import download_with_progress_updates
 
     parameterstr = urlencode([('cmd', query.strip()), ('format', format)])
-    url = sdssurl + '?' + parameterstr
 
     #either open the requested file or a buffer to later return the values
     if fn is None:
@@ -936,7 +947,11 @@ def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
         fw = open(fn, 'w')
 
     try:
-        q = urllib2.urlopen(url)
+        if usepost:
+            import requests
+            q = requests.post(sdssurl, data=parameterstr, stream=True).raw
+        else:
+            q = urllib2.urlopen(sdssurl + '?' + parameterstr)
         try:
             #first read the initial two lines to check for errors
             firstline = q.readline()
@@ -1129,7 +1144,7 @@ def get_saga_hosts_from_google(googleusername=None, googlepasswd=None,
                 print('Entry', rowvals, 'does not have an NSA number, cannot use')
             nsanum = int(r[2])
 
-            names = [r[0]]
+            names = [r[0].strip()]
             if r[1] is not None:
                 names.append('NGC' + r[1])
             names.append('NSA' + str(nsanum))
