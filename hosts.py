@@ -1028,11 +1028,20 @@ def get_saga_hosts():
 
     return hostsd
 
+
 def get_saga_hosts_from_google(googleusername=None, googlepasswd=None,
-                               useobservingsummary=False, cachefile='hosts_dl.pkl'):
+                               useobservingsummary=False, cachefile='hosts_dl.pkl',
+                               clientsecretjsonorfn=None):
     """
     Returns a lost of hosts obtained from querying the google spreadsheet
     "SAGA_Hosts+Satellites".  Currently only works for NSA hosts
+
+    To get this to access google after they sunset the name/password login,
+    you'll need to go to https://console.developers.google.com and create a
+    project.   Click "credentials" under "APIs&Auth", click "Create new Client
+    ID", and choose a "native" application.  After that's created, hit the
+    "download JSON" button, and then point the `clientsecretjsonorfn` argument
+    to the location of the downloaded file.
 
     Parameters
     ----------
@@ -1050,24 +1059,29 @@ def get_saga_hosts_from_google(googleusername=None, googlepasswd=None,
     import cPickle as pickle
     import getpass
     import gspread
+    from utils import get_google_oauth2_credentials
 
     if os.path.isfile(cachefile):
         print('Using cached version of google hosts list from file "{0}"'.format(cachefile))
         with open(cachefile) as f:
             return pickle.load(f)
 
-    if googleusername is None:
-        googleusername = getpass.getpass('Google username:')
-    if googlepasswd is None:
-        googlepasswd = getpass.getpass('Password for "{0}":'.format(googleusername))
-
     if useobservingsummary:
         ssname = 'SAGA Observing Summary'
     else:
         ssname = 'SAGA_Hosts+Satellites'
 
-    c = gspread.Client(auth=(googleusername, googlepasswd))
-    c.login()
+    if clientsecretjsonorfn:
+        credentials = get_google_oauth2_credentials(clientsecretjsonorfn)
+        c = gspread.authorize(credentials)
+    else:
+        if googleusername is None:
+            googleusername = getpass.getpass('Google username:')
+        if googlepasswd is None:
+            googlepasswd = getpass.getpass('Password for "{0}":'.format(googleusername))
+        c = gspread.Client(auth=(googleusername, googlepasswd))
+        c.login()
+
     ss = c.open(ssname)
     s = ss.get_worksheet(0)  # first worksheet
 
@@ -1111,14 +1125,16 @@ def get_saga_hosts_from_google(googleusername=None, googlepasswd=None,
         rowvals = [s.row_values(row) for row in range(startrow, endrow)]
 
         for r in rowvals:
-            sysname = r[0]
             if not r[2].strip():
                 print('Entry', rowvals, 'does not have an NSA number, cannot use')
             nsanum = int(r[2])
-            nsastr = 'NSA' + str(nsanum)
-            ngcstr = 'NGC' + r[1]
 
-            hosts.append(NSAHost(nsanum, [sysname, ngcstr, nsastr]))
+            names = [r[0]]
+            if r[1] is not None:
+                names.append('NGC' + r[1])
+            names.append('NSA' + str(nsanum))
+
+            hosts.append(NSAHost(nsanum, names))
 
     if cachefile:
         with open(cachefile, 'w') as f:

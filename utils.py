@@ -274,3 +274,90 @@ def get_mcconn_table(fnorurl='http://www.astro.uvic.ca/~alan/Nearby_Dwarfs_Datab
         t['name'] = [nm.replace('(I)', 'I') for nm in t['name']]
 
     return t
+
+
+def get_google_oauth2_credentials(clientsecretjsonorfn, useserver=True):
+    import json
+    import socket
+    import webbrowser
+    from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
+    from oauth2client.client import OAuth2WebServerFlow
+    try:
+        from oauth2client.keyring_storage import Storage as KeyringStorage
+    except ImportError:
+        KeyringStorage = None
+    from oauth2client.file import Storage as FileStorage
+
+    class CodeHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            import urlparse
+
+            qry = urlparse.urlparse(self.path).query
+            self.send_response(200, 'OK')
+            self.send_header('content-type', 'text/html')
+            self.end_headers()
+
+            if qry.startswith('code='):
+                self.server.code = qry[5:]
+                msg = 'Sucessfully obtained API access code.  You may close this window.'
+            else:
+                msg = 'Did not get API access code.  Use manual method.'
+            self.wfile.write('<html><body>{0}</body></html>'.format(msg))
+
+    if isinstance(clientsecretjsonorfn, basestring):
+        csjson = json.load(open(clientsecretjsonorfn))['installed']
+    else:
+        csjson = clientsecretjsonorfn
+
+    flow = OAuth2WebServerFlow(client_id=csjson[u'client_id'],
+                               client_secret=csjson['client_secret'],
+                               scope=['https://spreadsheets.google.com/feeds'],
+                               redirect_uri=csjson['redirect_uris'][0])
+    if KeyringStorage is None:
+        storage = FileStorage('OAuthcredentials.txt')
+    else:
+        storage = KeyringStorage('gspread_google_oauth', 'gspread_user')
+
+    credentials = storage.get()
+
+    if credentials is None:
+        old_uri = flow.redirect_uri
+        code = None
+
+        if useserver:
+            server = None
+            port = 9090
+            while server is None:
+                try:
+                    server = HTTPServer(('localhost', port), CodeHandler)
+                except socket.error as e:
+                    if e.errno == 98:
+                        server = None
+                        print('Failed to open local http server on port', port, 'trying', port+1)
+                        port += 1
+                    else:
+                        raise
+
+            server.timeout = 60
+
+            flow.redirect_uri = 'http://localhost:{0}'.format(port)
+            auth_uri = flow.step1_get_authorize_url()
+            webbrowser.open(auth_uri)
+            sys.stdout.write('You have {0} sec to finish authorization'.format(server.timeout))
+            sys.stdout.flush()
+            server.code = None
+            server.handle_request()
+            server.socket.close()
+            code = server.code
+
+        if code is None:
+            # the server failed or we don't use server
+            flow.redirect_uri = old_uri
+            auth_uri = flow.step1_get_authorize_url()
+            webbrowser.open(auth_uri)
+            code = raw_input('Enter verification code: ').strip()
+
+        credentials = flow.step2_exchange(code)
+        storage.put(credentials)
+
+    return credentials
