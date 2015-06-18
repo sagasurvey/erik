@@ -191,9 +191,9 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     #below are "overrides" rather than selection categories:
 
     #include SDSS spectroscopy QSOs
-    specqsos = cat['spec_class'] == 'QSO'
-    msk[specqsos] = inclspecqsos
     if inclspecqsos:
+        specqsos = cat['spec_class'] == 'QSO'
+        msk[specqsos] = inclspecqsos
         print('Found', sum(specqsos), 'QSO candidates')
 
     if removespecstars:
@@ -253,7 +253,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     for cut in morecuts:
         finalmsk = finalmsk & cut(res)
     if np.sum(~finalmsk) > 0:
-        print('morecuts removed', np.sum(~finalmsk), 'objects')
+        print 'morecuts removed', np.sum(~finalmsk), 'objects'
     return res[finalmsk]
 
 
@@ -599,12 +599,19 @@ def remove_targets_with_remlist(cat, hostorhostname,
         How close the match has to be if the objid search fails
     """
     import urllib2
-    from astropy.coordinates import ICRS
+    from astropy.coordinates import SkyCoord
 
     hostname = getattr(hostorhostname, 'name', hostorhostname)
+    if hasattr(hostorhostname, 'nsaid'):
+        nsanum = hostorhostname.nsaid
+    elif hostname.startswith('NSA'):
+        nsanum = int(hostname[3:])
+    else:
+        nsanum = None
+
 
     objids = cat['objID']
-    catcoords = ICRS(cat['ra']*u.deg, cat['dec']*u.deg)
+    catcoords = SkyCoord(cat['ra']*u.deg, cat['dec']*u.deg)
 
     objidstoremove = []
 
@@ -624,14 +631,14 @@ def remove_targets_with_remlist(cat, hostorhostname,
             continue  # empty line
 
         ls = l.split(',')
-        if ls[0] == hostname:
+        if ls[0] == hostname or (nsanum is not None and ls[1]!='' and int(ls[1]) == nsanum):
             #try to find it in the catalog, first by objid, and if not, by ra/dec
             objid = long(ls[2])
             if objid in objids:
                 objidstoremove.append(objid)
                 nmatched += 1
             else:
-                objcoord = ICRS(float(ls[3])*u.deg, float(ls[4])*u.deg)
+                objcoord = SkyCoord(float(ls[3])*u.deg, float(ls[4])*u.deg)
                 idx, sep, sep3d = objcoord.match_to_catalog_sky(catcoords)
                 if sep < matchtol:
                     objidstoremove.append(objid)

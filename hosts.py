@@ -223,11 +223,11 @@ class NSAHost(object):
     @property
     def coords(self):
         """
-        The host's coordinates as an `ICRS` object.
+        The host's coordinates as an ICRS `SkyCoord` object.
         """
-        from astropy.coordinates import ICRS
+        from astropy.coordinates import SkyCoord
 
-        return ICRS(self.ra*u.deg, self.dec*u.deg)
+        return SkyCoord(self.ra*u.deg, self.dec*u.deg, frame='icrs')
 
     @property
     def shortname(self):
@@ -437,8 +437,8 @@ class NSAHost(object):
         """
         if getattr(self, '_cached_sdss', None) is None:
             from os.path import exists
-            from astropy.io import ascii
-            from astropy.table import Column, MaskedColumn
+            from astropy.io import ascii, fits
+            from astropy.table import Table, Column, MaskedColumn
 
             if exists(self.fnsdss):
                 fn = self.fnsdss
@@ -451,20 +451,25 @@ class NSAHost(object):
                     #didn't find one
                     raise IOError('Could not find file {0} nor any of {1}'.format(self.fnsdss, self.altfnsdss))
 
-            self._cached_sdss = tab = ascii.read(fn, delimiter=',')
+            if '.fits' in fn:
+                tab = Table(fits.getdata(fn))
+            else:
+                tab = ascii.read(fn, delimiter=',')
+            self._cached_sdss = tab
 
             #add UBVRI converted from SDSS mags
             U, B, V, R, I = sdss_to_UBVRI(*[tab[b] for b in 'ugriz'])
-            pU, pB, pV, pR, pI = sdss_to_UBVRI(*[tab['psf_' + b] for b in 'ugriz'])
-
             for b in 'UBVRI':
                 dat = locals()[b]
                 colcls = MaskedColumn if hasattr(dat, 'mask') else Column
                 tab.add_column(colcls(name=b, data=dat))
-            for b in 'UBVRI':
-                dat = locals()['p' + b]
-                colcls = MaskedColumn if hasattr(dat, 'mask') else Column
-                tab.add_column(colcls(name='psf_' + b, data=dat))
+
+            if 'psf_u' in tab.colnames:
+                pU, pB, pV, pR, pI = sdss_to_UBVRI(*[tab['psf_' + b] for b in 'ugriz'])
+                for b in 'UBVRI':
+                    dat = locals()['p' + b]
+                    colcls = MaskedColumn if hasattr(dat, 'mask') else Column
+                    tab.add_column(colcls(name='psf_' + b, data=dat))
 
         return self._cached_sdss
 

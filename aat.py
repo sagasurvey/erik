@@ -6,48 +6,45 @@ Note that priority levels 5 and 7 are only used if wise data is present
 """
 import numpy as np
 
-import targeting
 from astropy import units as u
 from astropy.coordinates import Angle
 
 
-def prioritize_targets(targets, rvir=300*u.kpc):
+def prioritize_targets(targets, rvir=300*u.kpc, scheme='jun2014'):
     rvkpc = rvir.to(u.kpc).value
 
-    g = targets['g']
-    r = targets['r']
-    i = targets['i']
-    w1 = targets['w1'] if 'w1' in targets.colnames else None
-    rkpc = targets['rhost_kpc']
-
     pris = np.zeros(len(targets), dtype=int)
+    if scheme == 'jul2014':
+        g = targets['g']
+        r = targets['r']
+        i = targets['i']
+        w1 = targets['w1'] if 'w1' in targets.colnames else None
+        rkpc = targets['rhost_kpc']
 
-    pris[(g-r < 1.2) & (r-i < 0.7) & (r<21) & (rkpc < rvkpc)] = 1
-    pris[(g-r < 1.2) & (r-i < 0.7) & (r<20.5) & (rkpc < rvkpc)] = 2
 
-    pris[(g-r < 1.0) & (r-i < 0.5) & (r<20.5) & (rkpc > rvkpc)] = 3
+        pris[(g-r < 1.2) & (r-i < 0.7) & (r<21) & (rkpc < rvkpc)] = 1
+        pris[(g-r < 1.2) & (r-i < 0.7) & (r<20.5) & (rkpc < rvkpc)] = 2
 
-    #add priority level 5 and 7 *only* if WISE data are present
-    pris[(g-r < 1.0) & (r-i < 0.5) & (r<21) & (rkpc < rvkpc)] = 4
-    if w1 is not None:
-        pris[(r-w1<2.5) & (g-r < 1.0) & (r-i < 0.5) & (r<21) & (rkpc < rvkpc)] = 5
+        pris[(g-r < 1.0) & (r-i < 0.5) & (r<20.5) & (rkpc > rvkpc)] = 3
 
-    pris[(g-r < 1.0) & (r-i < 0.5) & (r<20.5) & (rkpc < rvkpc)] = 6
-    if w1 is not None:
-        pris[(r-w1<2.5) & (g-r < 1.0) & (r-i < 0.5) & (r<20.5) & (rkpc < rvkpc)] = 7
+        #add priority level 5 and 7 *only* if WISE data are present
+        pris[(g-r < 1.0) & (r-i < 0.5) & (r<21) & (rkpc < rvkpc)] = 4
+        if w1 is not None:
+            pris[(r-w1<2.5) & (g-r < 1.0) & (r-i < 0.5) & (r<21) & (rkpc < rvkpc)] = 5
 
-    #original version
-    # pris[(g-r < 1.2) & (r-i < 0.7) & (r<21)] = 1
-    # pris[(g-r < 1.0) & (r-i < 0.5) & (r<21)] = 2
+        pris[(g-r < 1.0) & (r-i < 0.5) & (r<20.5) & (rkpc < rvkpc)] = 6
+        if w1 is not None:
+            pris[(r-w1<2.5) & (g-r < 1.0) & (r-i < 0.5) & (r<20.5) & (rkpc < rvkpc)] = 7
+    elif scheme == 'jun2015':
+        sborder = np.argsort(targets['sb_petro_r'])
+        #now split into 3 based on SB-ile
+        pris[:] = 3
+        pris[sborder[:2*len(pris)//3]] = 2
+        pris[sborder[:len(pris)//3]] = 1
 
-    # pris[(g-r < 1.2) & (r-i < 0.7) & (r<20.5)] = 3
-    # pris[(g-r < 1.0) & (r-i < 0.5) & (r<20.5)] = 4
-
-    # pris[(g-r < 1.2) & (r-i < 0.7) & (r<21) & (rkpc < rvkpc)] = 5
-    # pris[(g-r < 1.0) & (r-i < 0.5) & (r<21) & (rkpc < rvkpc)] = 6
-
-    # pris[(g-r < 1.2) & (r-i < 0.7) & (r<20.5) & (rkpc < rvkpc)] = 7
-    # pris[(g-r < 1.0) & (r-i < 0.5) & (r<20.5) & (rkpc < rvkpc)] = 8
+        pris[targets['rhost_kpc'] < rvkpc] += 3  # prefer close-in to outer
+    else:
+        raise ValueError('unrecognized scheme')
 
     return pris
 
@@ -98,6 +95,12 @@ def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
         entry.append('host galaxy')
 
         lines.append(' '.join(entry))
+
+    if pris is None:
+        pris = prioritize_targets(catalog)
+    elif isinstance(pris, basestring):
+        pris = prioritize_targets(catalog, scheme=pris)
+
 
     for ci, pri in zip(catalog[idxs], pris[idxs]):
         if not 1 <= pri <= 9:
