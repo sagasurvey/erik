@@ -35,14 +35,16 @@ def prioritize_targets(targets, rvir=300*u.kpc, scheme='jun2014'):
         pris[(g-r < 1.0) & (r-i < 0.5) & (r<20.5) & (rkpc < rvkpc)] = 6
         if w1 is not None:
             pris[(r-w1<2.5) & (g-r < 1.0) & (r-i < 0.5) & (r<20.5) & (rkpc < rvkpc)] = 7
-    elif scheme == 'jun2015':
+    elif scheme == 'jun2015baseline':
         sborder = np.argsort(targets['sb_petro_r'])
-        #now split into 3 based on SB-ile
-        pris[:] = 3
-        pris[sborder[:2*len(pris)//3]] = 2
-        pris[sborder[:len(pris)//3]] = 1
+        # now split into 2 based on SB-ile
+        pris[:] = 2
+        pris[sborder[:len(pris)//2]] = 1
 
-        pris[targets['rhost_kpc'] < rvkpc] += 3  # prefer close-in to outer
+        #middle one for 3
+        #pris[sborder[:2*len(pris)//3]] = 2
+
+        pris[targets['rhost_kpc'] < rvkpc] += 2  # prefer close-in to outer
     else:
         raise ValueError('unrecognized scheme')
 
@@ -51,7 +53,7 @@ def prioritize_targets(targets, rvir=300*u.kpc, scheme='jun2014'):
 
 def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
                        fluxstars, skyradec, outfn=None, randomizeorder=True,
-                       fluxpri=8, inclhost=True):
+                       fluxpri=8, inclhost=True, manualtargetlines=[]):
     """
     Priority of 1 to 9 (9 highest) means use, any other `pris` values skipped
 
@@ -59,6 +61,8 @@ def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
     simply be pulled in wholesale.
 
     `inclhost` can give the priority, if desired - defaults to 9
+
+    `manualtargetlines` is a list of lines (in string form) to add by hand
     """
     lines = []
     lines.append('LABEL ' + host.name + ' base catalog')
@@ -101,9 +105,11 @@ def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
     elif isinstance(pris, basestring):
         pris = prioritize_targets(catalog, scheme=pris)
 
-
+    skippedbadpri = 0
+    extranotes = 'extra_aat_notes' in catalog.colnames
     for ci, pri in zip(catalog[idxs], pris[idxs]):
         if not 1 <= pri <= 9:
+            skippedbadpri += 1
             continue
 
         entry = []
@@ -116,8 +122,16 @@ def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
         entry.append('{0:0.2f}'.format(ci['fiber2mag_r']))
         entry.append('0')
         entry.append('magcol=fiber2mag_r, model_r={0:.2f}'.format(ci['r']))
+        if extranotes:
+            entry[-1] = entry[-1] + ci['extra_aat_notes']
 
         lines.append(' '.join(entry))
+
+    if skippedbadpri > 0:
+        print 'skipped', skippedbadpri, 'objects for priorities not in 1-9'
+
+    #add any manually-added targets
+    entry.extend(manualtargetlines)
 
     lines.append('\n#Flux stars')
     if randomizeorder:
@@ -298,7 +312,8 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
     if len(namestoskip) > 0:
         print 'Had', len(namestoskip), 'unmatched list file objects:\n', namestoskip
 
-    print 'Total remaining in each priority:', pritotal
+    msg = 'Total remaining in each priority ({0} fluxes, {1} guides, and {2} skies not included): {3}'
+    print msg.format(fluxdone, guidesdone, skydone, pritotal)
 
 
 def imagelist_fld_targets(fldlinesorfn, ttype='all', **kwargs):
@@ -383,7 +398,7 @@ def select_guide_stars_sdss(cat, magrng=(12.5, 14)):
     return cat[msk]
 
 def select_sky_positions(host, nsky=250, sdsscat=None, usnocat=None,
-                         nearnesslimitarcsec=15, outfn=None):
+                         nearnesslimitarcsec=15, outfn=None, rad=None):
     """
     Produces sky positions uniformly covering a circle centered at the host,
     with radius given by `environsarcmin`.
@@ -403,6 +418,9 @@ def select_sky_positions(host, nsky=250, sdsscat=None, usnocat=None,
     outfn : None or str
         If given, a file to save the sky positions out suitable for use in an
         AAT fld file
+    rad : angle quantity or None
+        radius from host out to make sky positions.  If None, will use host
+        `environsarcmin`.
 
     Returns
     -------
@@ -423,7 +441,10 @@ def select_sky_positions(host, nsky=250, sdsscat=None, usnocat=None,
     skdt = cKDTree(np.array([sdsscat['ra'], sdsscat['dec']]).T)
     ukdt = cKDTree(np.array([usnocat['RA'], usnocat['DEC']]).T)
 
-    raddeg = host.environsarcmin / 60.
+    if rad is None:
+        raddeg = host.environsarcmin / 60.
+    else:
+        raddeg = rad.to(u.degree).value
 
     ras = np.array([])
     decs = np.array([])
@@ -483,6 +504,7 @@ def select_flux_stars(cat, magrng=(17, 17.7), extcorr=False, fluxfnout=None, onl
     the given distance from the host. Should be an astropy quantity.
     """
     from astropy.units import degree, kpc
+    from astropy.table import Table
 
     starmsk = cat['type'] == 6 #type==6 means star
     cat = cat[starmsk]
@@ -520,7 +542,6 @@ def select_flux_stars(cat, magrng=(17, 17.7), extcorr=False, fluxfnout=None, onl
         else:
             raise ValueError('onlyoutside is not an angle or length')
 
-
     if fluxfnout:
         names = 'RA DEC u_psf g_psf r_psf i_psf z_psf extinction_r'.split()
         dat = [cat[msk]['ra'],
@@ -538,3 +559,50 @@ def select_flux_stars(cat, magrng=(17, 17.7), extcorr=False, fluxfnout=None, onl
             tab.write(f, format='ascii.commented_header')
 
     return cat[msk]
+
+def load_lis_file(fn):
+    from astropy.coordinates import SkyCoord
+    from astropy import table
+
+    info = []
+
+    comments = []
+
+    fibnums = []
+    ids = []
+    ras = []
+    decs = []
+    codes = []
+    pris = []
+    mags = []
+
+    with open(fn) as f:
+        for l in f:
+            if l.startswith('*'):
+                l = l[1:]  # strip the *
+                ls = l.split()
+                if len(ls) < 5:
+                    continue  # initial lines
+
+                if ls[1] == 'Parked':
+                    continue
+
+                data = ls[:14]
+                comments.append(' '.join(ls[14:]))
+
+                fibnums.append(int(data[0]))
+                ids.append(data[1])
+                ras.append(':'.join(data[2:5]))
+                decs.append(':'.join(data[5:8]))
+                codes.append(data[8])
+                pris.append(int(data[9]))
+                mags.append(float(data[10]))
+            else:
+                info.append(l.strip())
+
+    names = 'fibnums,ids,ras,decs,codes,pris,mags,comments'.split(',')
+    tab = table.Table(names=names, data=[locals()[nm] for nm in names])
+
+    sc = SkyCoord(ras, decs, unit=(u.hourangle, u.degree))
+
+    return tab, sc, '\n'.join(info)

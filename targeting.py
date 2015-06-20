@@ -1,4 +1,4 @@
-from __future__ import division
+from __future__ import division, print_function
 
 """
 These functions are for the "Distant local groups" project target selection.
@@ -25,7 +25,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     removegalsathighz=True, removegama='now', photflags=True,
     outercutrad=250, innercutrad=20, colorcuts={},
     randomize=True, removeallsdss=False, fibermagcut=('r', 23),
-    morecuts=[]):
+    verbose=False):
     """
     Selects targets from the SDSS catalog.
 
@@ -67,10 +67,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         A separation angle in *kpc* inside which to not select targets
         (or negative for arcmin), or None to not cut
     colorcuts: dict of 2-tuples
-        A dictionary mapping SDSS colors to the range of colors to accept as
-        ``(bluest, reddest)``. E.g., {'g-r': (-1, 2)}.  Default is to do no
-        color cuts. dict vals can also be (lower, upper, uncfactor) to allow
-        for an `uncfactor` of the uncertainty padding around the limits
+        See `colorcut_mask` inputs for what this should be
     randomize : bool
         Randomize the order of the catalog and the very end
     removeallsdss : bool
@@ -78,9 +75,8 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     fibermagcut : None or 2-tuple
         a 2-tuple ('band', mag) to remove objects with a fibermag fainter than
         `mag`, or None to do nothing about this.
-    morecuts : list of functions
-        A list of functions that take in the catalog and ouput a mask (True to
-        keep, False to drop).
+    verbose : bool
+        Print extra information
 
     Returns
     -------
@@ -99,36 +95,8 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     magcuts = (brightlimit < mag) & (mag < faintlimit)
 
     #color cuts if any are present
-    colorcutmsk = np.ones_like(magcuts)  # start by accepting everything
-    if colorcuts:
-        for k, v in colorcuts.iteritems():
-            c1, c2 = k.split('-')
-            color = cat[c1] - cat[c2]
-
-            if len(v) == 3:
-                bluec, redc, uncfactor = v
-
-                c1e = c1+'_err'
-                if c1e not in cat.colnames:
-                    c1e = c1+'err'
-                c2e = c2+'_err'
-                if c2e not in cat.colnames:
-                    c2e = c2+'err'
-
-                uncfactor = uncfactor * (cat[c1e] + cat[c2e])
-
-            else:
-                uncfactor = 0
-                bluec, redc = v
-            if bluec is None:
-                bluec = -float('inf')
-            if redc is None:
-                redc = float('inf')
-
-            assert bluec < redc, 'blue cut larger than red cut!: ' + str(v)
-
-            #this now adds the cuts to the mask for this color
-            colorcutmsk = colorcutmsk & ((bluec-uncfactor) < color) & (color < (redc)+uncfactor)
+    colorcuts = colorcuts.copy()
+    colorcutmsk = colorcut_mask(cat, colorcuts, verbose)
 
 
     #type==3 is an imaging-classified galaxy - but only do it if you're brighter than galvsallcutoff
@@ -250,11 +218,75 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         res = res[np.random.permutation(len(res))]
 
     finalmsk = np.ones(len(res), dtype=bool)
-    for cut in morecuts:
-        finalmsk = finalmsk & cut(res)
-    if np.sum(~finalmsk) > 0:
-        print 'morecuts removed', np.sum(~finalmsk), 'objects'
     return res[finalmsk]
+
+
+def colorcut_mask(cat, colorcuts, verbose=False):
+    """
+    Apply color cuts to a photometry catalog
+
+    Parameters
+    ----------
+    cat : astropy.table.Table
+        The catalog to actually select from
+    colorcuts: dict of 2-tuples
+        A dictionary mapping SDSS colors to the range of colors to accept as
+        ``(bluest, reddest)``. E.g., {'g-r': (-1, 2)}.  Default is to do no
+        color cuts. dict vals can also be (lower, upper, uncfactor) to allow
+        for an `uncfactor` of the uncertainty padding around the limits.  Can
+        also have an entry 'funcs' which is a list of functions accepting the
+        catalog as the sole argument and outputing masks to add more complex
+        color cuts
+    verbose : bool
+        If True, prints out what each cut does
+
+    Returns
+    -------
+    colorcutmsk : bool array
+        True for catalog entries that pass the color cuts, False for those that
+        do not.
+    """
+    colorcutmsk = np.ones(len(cat), dtype=bool)  # start by accepting everything
+    if colorcuts:
+        for k, v in colorcuts.iteritems():
+            if k == 'funcs':
+                for i, f in enumerate(v):
+                    fmsk = f(cat)
+                    if verbose:
+                        print('Function', i, 'removed', np.sum(~fmsk), 'objects')
+                    colorcutmsk = colorcutmsk & fmsk
+            else:
+                c1, c2 = k.split('-')
+                color = cat[c1] - cat[c2]
+
+                if len(v) == 3:
+                    bluec, redc, uncfactor = v
+
+                    c1e = c1+'_err'
+                    if c1e not in cat.colnames:
+                        c1e = c1+'err'
+                    c2e = c2+'_err'
+                    if c2e not in cat.colnames:
+                        c2e = c2+'err'
+
+                    uncfactor = uncfactor * (cat[c1e] + cat[c2e])
+
+                else:
+                    uncfactor = 0
+                    bluec, redc = v
+                if bluec is None:
+                    bluec = -float('inf')
+                if redc is None:
+                    redc = float('inf')
+
+                assert bluec < redc, 'blue cut larger than red cut!: ' + str(v)
+
+                #this now adds the cuts to the mask for this color
+                cmsk = ((bluec-uncfactor) < color) & (color < (redc+uncfactor))
+                if verbose:
+                    print('Colorcut for', k, 'removed', np.sum(~cmsk), 'objects')
+                colorcutmsk = colorcutmsk & cmsk
+    return colorcutmsk
 
 
 def find_gama(cat, host, raddeg, tol, matchfuture=True, whichgama='DR1'):
@@ -644,12 +676,13 @@ def remove_targets_with_remlist(cat, hostorhostname,
                     objidstoremove.append(objid)
                     nmatched += 1
                 else:
-                    print 'Could not find a match for objid {0} of {1}, closest is {2}'.format(objid, hostname, sep.to(u.arcsec))
+                    msg = 'Could not find a match for objid {0} of {1}, closest is {2}'
+                    print(msg.format(objid, hostname, sep.to(u.arcsec)))
 
     if nmatched == 0:
-        print 'No matches found for host "{0}" in remove list. Maybe you mis-typed something?'.format(hostname)
+        print('No matches found for host "{0}" in remove list. Maybe you mis-typed something?'.format(hostname))
     else:
-        print 'Removed', nmatched, 'objects for', hostname
+        print('Removed', nmatched, 'objects for', hostname)
 
     return cat[~np.in1d(objids, objidstoremove)]
 
@@ -725,4 +758,62 @@ def get_gama(fn=None, url='DR1'):
 
     return tab
 
+def add_forced_targets(rawcat, targcat, pris, toforce, pritoforceto, matchtol=1*u.arcsec):
+    """
+    This takes an input catalog
+    """
+    from astropy.coordinates import SkyCoord
+    from astropy.table import vstack
 
+    if isinstance(toforce, SkyCoord):
+        #match based on the closest w/i matchtol
+        catscs = SkyCoord(rawcat['ra']*u.deg, rawcat['dec']*u.deg)
+
+        idx, d2d, d3d = toforce.match_to_catalog_sky(catscs)
+        matches = d2d < matchtol
+
+        if np.any(matches):
+            print('Found', np.sum(matches), 'coordinate matches in list of things to force')
+            toadd = rawcat[idx[matches]]
+        else:
+            print('Found NO coordinate matches in list of things to force!')
+            toadd = None
+    else:
+        #it's the objID
+        matches = np.in1d(rawcat['objID'], toforce)
+        if np.sum(matches)>0:
+            print('Found', np.sum(matches), 'objID matches in list of things to force')
+            toadd = rawcat[matches]
+        else:
+            print('Found NO objID matches in list of things to force!')
+            toadd = None
+
+    if toadd is not None:
+        #remove any duplicates
+        dups = np.in1d(targcat['objID'], toadd['objID'])
+        if np.sum(dups) > 0:
+            print('Removed', np.sum(dups), 'Forced doubles (things that were already possible targets *and* forced)')
+            targcat = targcat[~dups]
+            pris = pris[~dups]
+
+        # now add them back in with the right pri
+        targcat = vstack([targcat, toadd])
+        pris = np.concatenate([pris, [pritoforceto]*len(toadd)])
+
+    return targcat, pris
+
+
+def find_duplicate_objids(catalog, idxtokeep=0):
+    """
+    Finds duplicate objIDs in the `catalog` and return a boolean array that is
+    True if it's a duplicate.  `idxtokeep` tells which of the duplicates to keep
+    (or None to keep none of them)
+    """
+    #now look for duplicates and always take the first - usually means multiple WISE or 2MASS matches
+    uids, ucnts = np.unique(catalog['objID'], return_counts=True)
+    dupstorem = np.zeros(len(catalog), dtype=bool)
+    for i in uids[ucnts>1]:
+        dupstorem[np.where(catalog['objID'] == i)[0]] = True
+        if idxtokeep is not None:
+            dupstorem[np.where(catalog['objID'] == i)[0][idxtokeep]] = False
+    return dupstorem

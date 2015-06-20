@@ -435,10 +435,9 @@ class NSAHost(object):
         cat : astropy.table.Table
             The SDSS catalog
         """
+        from os.path import exists
+
         if getattr(self, '_cached_sdss', None) is None:
-            from os.path import exists
-            from astropy.io import ascii, fits
-            from astropy.table import Table, Column, MaskedColumn
 
             if exists(self.fnsdss):
                 fn = self.fnsdss
@@ -450,28 +449,43 @@ class NSAHost(object):
                 else:
                     #didn't find one
                     raise IOError('Could not find file {0} nor any of {1}'.format(self.fnsdss, self.altfnsdss))
-
-            if '.fits' in fn:
-                tab = Table(fits.getdata(fn))
-            else:
-                tab = ascii.read(fn, delimiter=',')
-            self._cached_sdss = tab
-
-            #add UBVRI converted from SDSS mags
-            U, B, V, R, I = sdss_to_UBVRI(*[tab[b] for b in 'ugriz'])
-            for b in 'UBVRI':
-                dat = locals()[b]
-                colcls = MaskedColumn if hasattr(dat, 'mask') else Column
-                tab.add_column(colcls(name=b, data=dat))
-
-            if 'psf_u' in tab.colnames:
-                pU, pB, pV, pR, pI = sdss_to_UBVRI(*[tab['psf_' + b] for b in 'ugriz'])
-                for b in 'UBVRI':
-                    dat = locals()['p' + b]
-                    colcls = MaskedColumn if hasattr(dat, 'mask') else Column
-                    tab.add_column(colcls(name='psf_' + b, data=dat))
-
+            self._cached_sdss = self._load_and_reprocess_sdss_catalog(fn)
         return self._cached_sdss
+
+    def _load_and_reprocess_sdss_catalog(self, fn):
+        from astropy.io import ascii, fits
+        from astropy.table import Table, Column, MaskedColumn
+        from astropy.coordinates import SkyCoord
+
+        if '.fits' in fn:
+            tab = Table(fits.getdata(fn))
+        else:
+            tab = ascii.read(fn, delimiter=',')
+        self._cached_sdss = tab
+
+        # add UBVRI converted from SDSS mags
+        U, B, V, R, I = sdss_to_UBVRI(*[tab[b] for b in 'ugriz'])
+        for b in 'UBVRI':
+            dat = locals()[b]
+            colcls = MaskedColumn if hasattr(dat, 'mask') else Column
+            tab.add_column(colcls(name=b, data=dat))
+
+        if 'psf_u' in tab.colnames:
+            pU, pB, pV, pR, pI = sdss_to_UBVRI(*[tab['psf_' + b] for b in 'ugriz'])
+            for b in 'UBVRI':
+                dat = locals()['p' + b]
+                colcls = MaskedColumn if hasattr(dat, 'mask') else Column
+                tab.add_column(colcls(name='psf_' + b, data=dat))
+
+        if 'rhost' not in tab.colnames:
+            tabsc = SkyCoord(u.Quantity(tab['ra'], u.deg), u.Quantity(tab['dec'], u.deg))
+            rhost = self.coords.separation(tabsc).degree
+            colcls = MaskedColumn if hasattr(rhost, 'mask') else Column
+            tab.add_column(colcls(name='rhost', data=rhost))
+            tab.add_column(colcls(name='rhost_kpc', data=np.radians(rhost)*self.distmpc*1000))
+
+        return tab
+
 
     def open_on_nsasite(self):
         """
