@@ -203,9 +203,13 @@ def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
     return lines
 
 
+zlogcolnames = 'name,ra,dec,mag,z,sn,zqual,idx,sat?,star,unknown'.split(',')
+
+
 def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
                               nflux='all', nsky='all', utcobsdate=None,
                               fieldname=None, listorem=None, dontrempri=None,
+                              zlogfns=None, zltabkeepfunc=lambda entry: entry['zqual'] < 3,
                               guidemags='all'):
     """
     Selects from the master .fld and creates a smaller .fld file for consumption
@@ -217,11 +221,19 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
     `listorem` should be a list of ".lis" files of allocations as output by
     configure (or None)
 
-    `dontrempri` is the priority to include even if it's in one of the
-    `listorem`s.
+    `dontrempri` is the priority to include even if it's in one of the remove
+    lists.
+
+    `zlogfns` should be a list of zlog files *which must match the corresponding
+    .lis file* or None to not use the zlog file.
+
+    `zltabkeepfunc` is a function that takes an entry in the zltab and returns
+    True if the object should be *kept* even if its in listorem. (ignored if
+    `zlogfns` is None).
 
     `guidemags` can be 'all' or a 2-tuple
     """
+    from astropy.table import Table
 
     inhdr = True
 
@@ -239,21 +251,48 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
 
     namestoskip = []
     if listorem:
-        for lis in listorem:
-            with open(lis) as f:
-                prentslen = len(namestoskip)
-                for l in f:
-                    if l.startswith('*'):
-                        ls = l.split()
-                        if len(ls) > 12:
-                            #actual object line
-                            if not(ls[2].startswith('Sky') or
-                                   ls[2].startswith('Guide') or
-                                   ls[2].startswith('Flux') or
-                                   ls[2].startswith('Parked')):
-                                namestoskip.append(ls[2])
-            print 'Found', len(namestoskip) - prentslen, 'objects to remove in', lis
+        if zlogfns and len(zlogfns) != len(listorem):
+            raise ValueError('zlogfns and listorem do not match!')
+        for i, lis in enumerate(listorem):
+            prentslen = len(namestoskip)
+            listab = load_lis_file(lis)[0]
 
+            if zlogfns:
+                zlogtab = Table.read(zlogfns[0], format='ascii', names=zlogcolnames)
+
+                zlogfibnums = []
+                for nm in zlogtab['name']:
+                    if nm == 'noid':
+                        zlogfibnums.append(-1)
+                    else:
+                        zlogfibnums.append(int(nm.split('_')[-1]))
+            else:
+                zlogtab = None
+
+            keptfibers = []
+            for entry in listab:
+                nm = entry['ids']
+                fibnum = entry['fibnums']
+
+                if not (nm.startswith('Flux') or nm.startswith('Guide') or nm.startswith('Sky')):
+                    if zlogtab is not None:
+                        fibmatch = zlogfibnums == fibnum
+                        if np.sum(fibmatch) == 0:
+                            msg = 'Could not find a match in the zlog for fiber #{0}!'
+                            print(msg.format(fibnum))
+                            zlentry = None
+                        elif np.sum(fibmatch) > 1:
+                            msg = 'Found {0} zlog matches for fiber #{1}.  Using first one'
+                            print(msg.format(np.sum(fibmatch), fibnum))
+                            zlentry = zlogtab[fibmatch][0]
+                        else:
+                            zlentry = zlogtab[fibmatch][0]
+                        if zlentry is not None and zltabkeepfunc(zlentry):
+                            keptfibers.append(fibnum)
+                            continue
+                    namestoskip.append(nm)
+            print 'Kept the following fibers in due to zltabkeepfunc:', keptfibers
+            print 'Found', len(namestoskip) - prentslen, 'objects to remove in', lis
 
     with open(masterfn) as fr:
         with open(outfn, 'w') as fw:
@@ -606,3 +645,55 @@ def load_lis_file(fn):
     sc = SkyCoord(ras, decs, unit=(u.hourangle, u.degree))
 
     return tab, sc, '\n'.join(info)
+
+
+def load_fld(fn):
+    from astropy.coordinates import SkyCoord
+    from astropy import table
+
+    header = []
+
+    comment = []
+
+    name = []
+    ra = []
+    dec = []
+    code = []
+    pri = []
+    mag = []
+
+    inheader = True
+
+    with open(fn) as f:
+        for l in f:
+            if inheader:
+                if l.startswith('# End of Header'):
+                    inheader = False
+                else:
+                    header.append(l.strip())
+            elif not l.startswith('#'):
+                if l.strip() == '':
+                    continue
+
+                ls = l.split()
+                if len(ls) < 5:
+                    continue  # initial lines
+
+                if ls[1] == 'Parked':
+                    continue
+
+                data = ls[:11]
+                comment.append(' '.join(ls[11:]))
+
+                name.append(data[0])
+                ra.append(':'.join(data[1:4]))
+                dec.append(':'.join(data[4:7]))
+                code.append(data[7])
+                pri.append(int(data[8]))
+                mag.append(float(data[9]))
+
+    names = 'name,ra,dec,code,pri,mag,comment'.split(',')
+    tab = table.Table(names=names, data=[locals()[nm] for nm in names])
+    sc = SkyCoord(ra, dec, unit=(u.hourangle, u.degree))
+
+    return tab, sc, '\n'.join(header)
