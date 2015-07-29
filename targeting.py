@@ -25,13 +25,13 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     removegalsathighz=True, removegama='now', photflags=True,
     outercutrad=250, innercutrad=20, colorcuts={},
     randomize=True, removeallsdss=False, fibermagcut=('r', 23),
-    verbose=False):
+    verbose=False, catalog=None):
     """
     Selects targets from the SDSS catalog.
 
     Parameters
     ----------
-    hostorcat : NSAHost
+    host : NSAHost
         The host object to select targets for
     band : str
         The name of the photometric band to use for magnitude cuts
@@ -77,6 +77,9 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
         `mag`, or None to do nothing about this.
     verbose : bool
         Print extra information
+    catalog : `astropy.table.Table` or None
+        If None, use the `get_sdss_catalog` from the host.  Otherwise, should
+        be something that looks like that.
 
     Returns
     -------
@@ -87,7 +90,10 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     from astropy.table import Column, MaskedColumn
     from math import cos, radians
 
-    cat = host.get_sdss_catalog()
+    if catalog is None:
+        cat = host.get_sdss_catalog()
+    else:
+        cat = catalog
 
     mag = cat[band]
 

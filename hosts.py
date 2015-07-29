@@ -449,10 +449,10 @@ class NSAHost(object):
                 else:
                     #didn't find one
                     raise IOError('Could not find file {0} nor any of {1}'.format(self.fnsdss, self.altfnsdss))
-            self._cached_sdss = self._load_and_reprocess_sdss_catalog(fn)
+            self._cached_sdss = self.load_and_reprocess_sdss_catalog(fn)
         return self._cached_sdss
 
-    def _load_and_reprocess_sdss_catalog(self, fn):
+    def load_and_reprocess_sdss_catalog(self, fn):
         from astropy.io import ascii, fits
         from astropy.table import Table, Column, MaskedColumn
         from astropy.coordinates import SkyCoord
@@ -461,7 +461,6 @@ class NSAHost(object):
             tab = Table(fits.getdata(fn))
         else:
             tab = ascii.read(fn, delimiter=',')
-        self._cached_sdss = tab
 
         # add UBVRI converted from SDSS mags
         U, B, V, R, I = sdss_to_UBVRI(*[tab[b] for b in 'ugriz'])
@@ -483,6 +482,23 @@ class NSAHost(object):
             colcls = MaskedColumn if hasattr(rhost, 'mask') else Column
             tab.add_column(colcls(name='rhost', data=rhost))
             tab.add_column(colcls(name='rhost_kpc', data=np.radians(rhost)*self.distmpc*1000))
+
+        if 'type' not in tab.colnames or 'phot_sg' not in tab.colnames:
+            # some catalogs had 'phot_sg' as an *integer* 3/6
+            if 'phot_sg' in tab.colnames and tab['phot_sg'].dtype.kind == 'i':
+                typeint = tab['phot_sg']
+                tab.remove_column('phot_sg')
+            elif 'type' in tab.colnames and tab['type'].dtype.kind == 'i':
+                typeint = tab['type']
+                tab.remove_column('type')
+            else:
+                raise ValueError("couldn't figure out what's up with type and phot_sg")
+
+            sgstr = np.zeros(len(tab), dtype='S6')
+            sgstr[typeint == 3] = 'GALAXY'
+            sgstr[typeint == 6] = 'STAR'
+            tab.add_column(colcls(name='type', data=typeint))
+            tab.add_column(colcls(name='phot_sg', data=sgstr))
 
         return tab
 
