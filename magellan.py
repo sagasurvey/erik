@@ -430,12 +430,15 @@ def plot_imacs_masks(host, clf=True, save=False, eastleft=False, altname=None,
         for pri in np.unique(pris):
             ntarg = np.sum(obspris==pri)
             nrem = np.sum(pris==pri) - np.sum(obspris==pri)
-            print('Priority', pri, ':', ntarg, 'targeted,', nrem, 'remaining')
-            if pri<=2:
-                msg = 'Targeted {0} of {1} Pri {3} objects: {2:.0f}%'
-                txt = msg.format(ntarg, ntarg+nrem, 100*ntarg/(ntarg+nrem), pri)
-                plt.text(0.05, 0.025*ipri, txt, transform=plt.gca().transAxes)
-                ipri+=1
+            print('Priority', pri, ':', ntarg, 'targeted,', nrem, 'remaining:', 100*ntarg/(ntarg+nrem),'%')
+            # if pri<=2:
+            #     msg = 'Targeted {0} of {1} Pri {3} objects: {2:.0f}%'
+            #     txt = msg.format(ntarg, ntarg+nrem, 100*ntarg/(ntarg+nrem), pri)
+            #     plt.text(0.05, 0.025*ipri, txt, transform=plt.gca().transAxes)
+            #     ipri+=1
+        ntarg = len(obspris)
+        nrem = len(pris) - len(obspris)
+        print('All priorities:', ntarg, 'targeted,', nrem, 'remaining:', 100*ntarg/(ntarg+nrem),'%')
 
     plt.xlabel('RA [deg]')
     plt.ylabel('Dec [deg]')
@@ -502,7 +505,3 @@ def load_ricardo_rvs_and_match(fn='rv_ricardo_jul32013.dat', fields=None, vtouse
         decs.append(fis[fi][2][idx])
 
     return dict([(enm, np.array(locals()[enm])) for enm in 'nms,ras,decs,rvs,rverrs,fns,specclass'.split(',')])
-
-
-
-
