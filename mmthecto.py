@@ -240,16 +240,29 @@ def select_flux_stars(cat, magrng=(17, 17.7), extcorr=False, fluxfnout=None):
     msk = (sp_std|red_std) & (minmag < r)& (r < maxmag)
 
     if fluxfnout:
-        names = 'RA DEC u_psf g_psf r_psf i_psf z_psf extinction_r'.split()
-        dat = [cat[msk]['ra'],
-               cat[msk]['dec'],
-               cat[msk]['psf_u'],
-               cat[msk]['psf_g'],
-               cat[msk]['psf_r'],
-               cat[msk]['psf_i'],
-               cat[msk]['psf_z'],
-               cat[msk]['Ar']
-              ]
+        if 'psf_r' in cat.colnames:
+            names = 'RA DEC u_psf g_psf r_psf i_psf z_psf extinction_r'.split()
+            dat = [cat[msk]['ra'],
+                   cat[msk]['dec'],
+                   cat[msk]['psf_u'],
+                   cat[msk]['psf_g'],
+                   cat[msk]['psf_r'],
+                   cat[msk]['psf_i'],
+                   cat[msk]['psf_z'],
+                   cat[msk]['Ar']
+                  ]
+        else:
+            print('Could not find psf mags so falling back on regular mags...')
+            names = 'RA DEC u_psf g r i z extinction_r'.split()
+            dat = [cat[msk]['ra'],
+                   cat[msk]['dec'],
+                   cat[msk]['u'],
+                   cat[msk]['g'],
+                   cat[msk]['r'],
+                   cat[msk]['i'],
+                   cat[msk]['z'],
+                   cat[msk]['Ar']
+                  ]
         tab = Table(data=dat, names=names)
         with open(fluxfnout, 'w') as f:
             #f.write('#RA DEC u_psf g_psf r_psf i_psf z_psf extinction_r')
@@ -270,7 +283,7 @@ def parse_cfg_file(fn):
     """
     returns coords, targets, ranks, fields
     """
-    from astropy.coordinates import ICRSCoordinates
+    from astropy.coordinates import SkyCoord
     from astropy.io import ascii
 
     intab = False
@@ -289,7 +302,7 @@ def parse_cfg_file(fn):
                     intab = False
                 else:
                     fiber, ra, dec, platex, platey, target, rank = [e.strip() for e in l.split('\t')]
-                    coords.append(ICRSCoordinates(ra, dec, unit=('hr', 'deg')))
+                    coords.append(SkyCoord(ra, dec, unit=('hr', 'deg')))
                     targets.append(int(float(target)))
                     ranks.append(int(float(rank)))
                     fields.append(fi)

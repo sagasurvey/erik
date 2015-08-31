@@ -664,7 +664,7 @@ def remove_targets_with_remlist(cat, hostorhostname,
             remlist_content = f.read()
 
     nmatched = 0
-    for l in remlist_content.split('\n')[2:]:  # [2:] is to skip header lines
+    for i, l in enumerate(remlist_content.split('\n')[2:]):  # [2:] is to skip header lines
         if l.replace(',', '').strip() == '':
             continue  # empty line
 
