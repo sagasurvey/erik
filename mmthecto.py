@@ -152,8 +152,7 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
         catlines.append('\t'.join(tabentries[-1]))
 
     #calibration stars
-    fluxtargs = select_flux_stars(host.get_sdss_catalog(), fluxrng,
-                                  fluxfnout=fluxfnout)
+    fluxtargs = select_flux_stars(host.get_sdss_catalog(), fluxrng, fluxfnout=None)
     print 'Found', len(fluxtargs), 'Flux stars'
     if removefluxdistance is not None:
         fluxsc = SkyCoord(fluxtargs['ra']*u.deg, fluxtargs['dec']*u.deg)
@@ -163,6 +162,9 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
         if np.sum(~fluxsepmsk) > 0:
             print 'Removing', np.sum(~fluxsepmsk), 'Flux stars too close to program stars'
             fluxtargs = fluxtargs[fluxsepmsk]
+            host._last_hecto_fluxsepmsk = fluxsepmsk
+    if fluxfnout:
+        write_flux_stars(fluxfnout, fluxtargs)
 
     for t in fluxtargs:
         rastr = Angle(t['ra'], 'deg').to_string('hr', sep=':', precision=3)
@@ -240,35 +242,39 @@ def select_flux_stars(cat, magrng=(17, 17.7), extcorr=False, fluxfnout=None):
     msk = (sp_std|red_std) & (minmag < r)& (r < maxmag)
 
     if fluxfnout:
-        if 'psf_r' in cat.colnames:
-            names = 'RA DEC u_psf g_psf r_psf i_psf z_psf extinction_r'.split()
-            dat = [cat[msk]['ra'],
-                   cat[msk]['dec'],
-                   cat[msk]['psf_u'],
-                   cat[msk]['psf_g'],
-                   cat[msk]['psf_r'],
-                   cat[msk]['psf_i'],
-                   cat[msk]['psf_z'],
-                   cat[msk]['Ar']
-                  ]
-        else:
-            print('Could not find psf mags so falling back on regular mags...')
-            names = 'RA DEC u_psf g r i z extinction_r'.split()
-            dat = [cat[msk]['ra'],
-                   cat[msk]['dec'],
-                   cat[msk]['u'],
-                   cat[msk]['g'],
-                   cat[msk]['r'],
-                   cat[msk]['i'],
-                   cat[msk]['z'],
-                   cat[msk]['Ar']
-                  ]
-        tab = Table(data=dat, names=names)
-        with open(fluxfnout, 'w') as f:
-            #f.write('#RA DEC u_psf g_psf r_psf i_psf z_psf extinction_r')
-            tab.write(f, format='ascii.commented_header')
+        write_flux_stars(fluxfnout, cat[msk])
 
     return cat[msk]
+
+def write_flux_stars(fluxfnout, cat):
+    if 'psf_r' in cat.colnames:
+        names = 'RA DEC u_psf g_psf r_psf i_psf z_psf extinction_r'.split()
+        dat = [cat['ra'],
+               cat['dec'],
+               cat['psf_u'],
+               cat['psf_g'],
+               cat['psf_r'],
+               cat['psf_i'],
+               cat['psf_z'],
+               cat['Ar']
+              ]
+    else:
+        print('Could not find psf mags so falling back on regular mags...')
+        names = 'RA DEC u_psf g r i z extinction_r'.split()
+        dat = [cat['ra'],
+               cat['dec'],
+               cat['u'],
+               cat['g'],
+               cat['r'],
+               cat['i'],
+               cat['z'],
+               cat['Ar']
+              ]
+    tab = Table(data=dat, names=names)
+    with open(fluxfnout, 'w') as f:
+        #f.write('#RA DEC u_psf g_psf r_psf i_psf z_psf extinction_r')
+        tab.write(f, format='ascii.commented_header')
+
 
 def select_guide_stars(cat, magrng=(14, 15)):
     msk = cat['type'] == 6 #type==6 means star
