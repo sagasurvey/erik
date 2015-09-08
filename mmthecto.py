@@ -188,7 +188,7 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
         tabentries.append([rastr, decstr, objnm, '', 'guide', mag])
         catlines.append('\t'.join(tabentries[-1]))
 
-    catstr = '\n'.join(catlines)
+    catstr = '\n'.join(catlines) + '\n'
     if fnout:
         with open(fnout, 'w') as f:
             f.write(catstr)
