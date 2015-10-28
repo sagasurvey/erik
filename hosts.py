@@ -1063,11 +1063,17 @@ def get_old_hosts():
     return hostsd
 
 
+_HIDE_GET_SAGA_HOSTS_WARN = False
 def get_saga_hosts():
     """
     Returns a dictionary with the "official" SAGA names
     """
+    from warnings import warn
+
+    if not _HIDE_GET_SAGA_HOSTS_WARN:
+        warn('This is out-of-date.  get_saga_hosts_from_google is a better choice')
     hostsd = {}
+
 
     #note that the first name here is for the *host*, not the system, system is the second
     hostsd['odyssey'] = NSAHost(147100, ['Odyssey', 'Odysseus', 'NGC6181']) #30.3 Mpc
@@ -1084,7 +1090,7 @@ def get_saga_hosts():
 
 def get_saga_hosts_from_google(googleusername=None, googlepasswd=None,
                                useobservingsummary=False, cachefile='hosts_dl.pkl',
-                               clientsecretjsonorfn=None):
+                               clientsecretjsonorfn='client_secrets.json'):
     """
     Returns a lost of hosts obtained from querying the google spreadsheet
     "SAGA_Hosts+Satellites".  Currently only works for NSA hosts
@@ -1107,16 +1113,21 @@ def get_saga_hosts_from_google(googleusername=None, googlepasswd=None,
     cachefile : str or bool
         If a string, specifies a filename to load the host list from, or if it
         is absent, the file the loaded data will get saved to.  To clear the
-        cache, just delete the relevant file.
+        cache, just delete the relevant file.  Note that if it ends in "pkl", a
+        2 or 3 will be added for the python version.
     """
-    import cPickle as pickle
+    import sys
     import getpass
     import gspread
     from utils import get_google_oauth2_credentials
+    pickle = six.moves.cPickle
+
+    if cachefile.endswith('.pkl'):
+        cachefile = cachefile + str(sys.version_info[0])
 
     if os.path.isfile(cachefile):
         print('Using cached version of google hosts list from file "{0}"'.format(cachefile))
-        with open(cachefile) as f:
+        with open(cachefile, 'rb') as f:
             return pickle.load(f)
 
     if useobservingsummary:
@@ -1190,11 +1201,13 @@ def get_saga_hosts_from_google(googleusername=None, googlepasswd=None,
             hosts.append(NSAHost(nsanum, names))
 
     if cachefile:
-        with open(cachefile, 'w') as f:
+        with open(cachefile, 'wb') as f:
             pickle.dump(hosts, f)
 
     return hosts
 
 
 #this adds the hosts from the get_saga_hosts function to the module's namespace
+_HIDE_GET_SAGA_HOSTS_WARN = True
 locals().update(get_saga_hosts())
+_HIDE_GET_SAGA_HOSTS_WARN = False

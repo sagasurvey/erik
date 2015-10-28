@@ -285,8 +285,12 @@ def get_google_oauth2_credentials(clientsecretjsonorfn, useserver=True):
     import json
     import socket
     import webbrowser
-    from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
+
     from oauth2client.client import OAuth2WebServerFlow
+
+    HTTPServer = six.moves.BaseHTTPServer.HTTPServer
+    BaseHTTPRequestHandler = six.moves.BaseHTTPServer.BaseHTTPRequestHandler
+
     try:
         from oauth2client.keyring_storage import Storage as KeyringStorage
     except ImportError:
@@ -295,9 +299,9 @@ def get_google_oauth2_credentials(clientsecretjsonorfn, useserver=True):
 
     class CodeHandler(BaseHTTPRequestHandler):
         def do_GET(self):
-            import urlparse
+            urlparse = six.moves.urllib_parse.urlparse
 
-            qry = urlparse.urlparse(self.path).query
+            qry = urlparse(self.path).query
             self.send_response(200, 'OK')
             self.send_header('content-type', 'text/html')
             self.end_headers()

@@ -162,7 +162,7 @@ def build_imacs_targeting_files(host, observername, date=None,
     refmsk = np.ones(len(cat), dtype=bool)
     for band in 'gri':
         refmsk & (np.abs(cat[band] - cat['psf_' + band]) < 0.25)
-    for band, rng in refmagrange.iteritems():
+    for band, rng in refmagrange.items():
         refmsk = refmsk & (min(rng) < cat['psf_' + band]) & (cat['psf_' + band] < max(rng))
 
     fncat = 'imacs_targets/{0}.cat'.format(host.shortname)

@@ -259,7 +259,7 @@ def colorcut_mask(cat, colorcuts, verbose=False):
     """
     colorcutmsk = np.ones(len(cat), dtype=bool)  # start by accepting everything
     if colorcuts:
-        for k, v in colorcuts.iteritems():
+        for k, v in colorcuts.items():
             if k == 'funcs':
                 for i, f in enumerate(v):
                     fmsk = f(cat)
@@ -676,7 +676,7 @@ def remove_targets_with_remlist(cat, hostorhostname,
         ls = l.split(',')
         if ls[0] == hostname or (nsanum is not None and ls[1]!='' and int(ls[1]) == nsanum):
             #try to find it in the catalog, first by objid, and if not, by ra/dec
-            objid = long(ls[2])
+            objid = six.integer_types[-1](ls[2]) #integer_types[-1] is long on py2
             if objid in objids:
                 objidstoremove.append(objid)
                 nmatched += 1
