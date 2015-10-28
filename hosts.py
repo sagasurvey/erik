@@ -9,6 +9,12 @@ import sys
 import numpy as np
 from matplotlib import pyplot as plt
 
+try:
+    import six
+except ImportErrir:
+    from astropy.extern import six
+urlopen = six.moves.urllib.request.urlopen
+
 from astropy import units as u
 
 
@@ -86,7 +92,7 @@ class NSAHost(object):
         if name is None:
             self.name = nsaname
             self.altnames = []
-        elif isinstance(name, basestring):
+        elif isinstance(name, six.string_types):
             self.name = name
             self.altnames = [nsaname]
         else:
@@ -360,7 +366,6 @@ class NSAHost(object):
 
         """
         from os.path import exists
-        import urllib2
 
         raddeg = self.environsarcmin / 60.
 
@@ -374,7 +379,7 @@ class NSAHost(object):
                     print('File', fn, 'exists - not downloading anything.')
                     break
             else:
-                u = urllib2.urlopen(usnourl)
+                u = urlopen(usnourl)
                 try:
                     with open(self.fnusnob, 'w') as fw:
                         download_with_progress_updates(u, fw,
@@ -559,7 +564,7 @@ class NSAHost(object):
         """
         import requests
 
-        if isinstance(drorurl, basestring):
+        if isinstance(drorurl, six.string_types):
             url = drorurl
         else:
             url = 'http://skyservice.pha.jhu.edu/DR' + str(drorurl) + '/ImgCutout/getjpeg.aspx'
@@ -602,7 +607,7 @@ def download_with_progress_updates(u, fw, nreports=100, msg=None, outstream=sys.
 
     Parameters
     ----------
-    u : result of `urllib2.urlopen`
+    u : result of `urlopen`
         The file-like object to read from
     fw : writeable file-like object
         The file object to fill with the content of the download.
@@ -708,7 +713,6 @@ def get_nsa(fn=None):
         The data as an `astropy.io.fits` record array.
     """
     import os
-    from urllib2 import urlopen
 
     from astropy.io import fits
     from hosts import download_with_progress_updates
@@ -962,10 +966,9 @@ def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
 
     """
     import os
-    import urllib2
     import datetime
     from urllib import urlencode
-    from StringIO import StringIO
+    StringIO = six.moves.StringIO
 
     from hosts import download_with_progress_updates
 
@@ -986,7 +989,7 @@ def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
             import requests
             q = requests.post(sdssurl, data=parameterstr, stream=True).raw
         else:
-            q = urllib2.urlopen(sdssurl + '?' + parameterstr)
+            q = urlopen(sdssurl + '?' + parameterstr)
         try:
             #first read the initial two lines to check for errors
             firstline = q.readline()
@@ -1003,7 +1006,7 @@ def download_sdss_query(query, fn=None, sdssurl=SDSS_SQL_URL, format='csv',
                 dtstr = str(datetime.datetime.today())
                 fw.write('#Retrieved on {0} from {1}\n'.format(dtstr, sdssurl))
                 fw.write('#Query:\n#{0}\n'.format(query.strip().replace('\n', '\n#')))
-                if isinstance(inclheader, basestring):
+                if isinstance(inclheader, six.string_types):
                     fw.write('#{0}\n'.format(inclheader.replace('\n', '\n#')))
 
             fw.write(firstline)

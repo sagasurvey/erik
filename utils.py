@@ -5,6 +5,10 @@ from __future__ import division, print_function
 
 import numpy as np
 
+try:
+    import six
+except ImportErrir:
+    from astropy.extern import six
 
 def int_to_roman(input):
     """
@@ -305,7 +309,7 @@ def get_google_oauth2_credentials(clientsecretjsonorfn, useserver=True):
                 msg = 'Did not get API access code.  Use manual method.'
             self.wfile.write('<html><body>{0}</body></html>'.format(msg))
 
-    if isinstance(clientsecretjsonorfn, basestring):
+    if isinstance(clientsecretjsonorfn, six.string_types):
         csjson = json.load(open(clientsecretjsonorfn))['installed']
     else:
         csjson = clientsecretjsonorfn
@@ -396,7 +400,7 @@ def skycoord_to_regions(scs, shape='point', otherparams='', ds9=None):
         scs = SkyCoord([scs])
 
     reglines = []
-    if isinstance(otherparams, basestring):
+    if isinstance(otherparams, six.string_types):
         for ra, dec in zip(scs.ra.deg, scs.dec.deg):
             reglines.append('icrs; {shape} {ra}d {dec}d '.format(**locals()) + otherparams)
     else:

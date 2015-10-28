@@ -2,6 +2,8 @@
 This file contains functions for targeting objects as part of the "distant
 local group" project using MMT/Hectospec.
 """
+from __future__ import print_function
+
 import numpy as np
 
 import targeting
@@ -65,14 +67,14 @@ def make_catalog(host, fnout=None, targetfaintlim=(21.,22.), targetoutercutrad=3
         targs = targeting.select_targets(host, faintlimit=seclimit, outercutrad=targetoutercutrad, removegalsathighz=removegalsathighz, removespecstars=removespecstars, inclspecqsos=inclspecqsos)
         outermsk = None
 
-    print 'Found', len(targs), 'targets'
+    print('Found', len(targs), 'targets')
     if outermsk is not None:
-        print (~outermsk).sum(), 'are in the inner zone'
+        print((~outermsk).sum(), 'are in the inner zone')
     if prisecbounday != seclimit:
-        print np.sum(targs['r'] < prisecbounday), 'Primaries and',np.sum((targs['r'] > prisecbounday) & (targs['r'] < seclimit)),'Secondaries'
+        print(np.sum(targs['r'] < prisecbounday), 'Primaries and',np.sum((targs['r'] > prisecbounday) & (targs['r'] < seclimit)),'Secondaries')
         if outermsk is not None:
             inrtargs = targs[~outermsk]
-            print np.sum(inrtargs['r'] < prisecbounday), 'Primaries and',np.sum((inrtargs['r'] > prisecbounday) & (inrtargs['r'] < seclimit)),'Secondaries are in the inner zone'
+            print(np.sum(inrtargs['r'] < prisecbounday), 'Primaries and',np.sum((inrtargs['r'] > prisecbounday) & (inrtargs['r'] < seclimit)),'Secondaries are in the inner zone')
 
 
 
@@ -89,13 +91,13 @@ def make_catalog(host, fnout=None, targetfaintlim=(21.,22.), targetoutercutrad=3
         #filter things that have faint fiber mags in the secondart targets
         secmsk = (targs['r'] > prisecbounday) & (targs['r'] < seclimit) & (fibmag < secfiberlimit)
 
-        print 'Accepting', primsk.sum(), 'primary targets and', secmsk.sum(), 'secondaries according to fiber faint limit'
+        print('Accepting', primsk.sum(), 'primary targets and', secmsk.sum(), 'secondaries according to fiber faint limit')
         targs = targs[primsk | secmsk]
 
     if fibermag_brightlimit is not None:
         msk = targs[fibermag_type] > fibermag_brightlimit
         targs = targs[msk]
-        print 'Filtering', msk.sum(), ' targets due to fiber bright limit'
+        print('Filtering', msk.sum(), ' targets due to fiber bright limit')
 
     targranks = []
     for t in targs:
@@ -141,7 +143,7 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
                 '--\t---\t------\t----\t----\t---']
 
     #entries for the actual targets
-    print 'Including', len(targs), 'targets'
+    print('Including', len(targs), 'targets')
     for i, (t, rank) in enumerate(zip(targs, targetranks)):
         rastr = Angle(t['ra'], 'deg').to_string('hr', sep=':', precision=3)
         decstr = Angle(t['dec'], 'deg').to_string('deg', sep=':', precision=3)
@@ -153,14 +155,14 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
 
     #calibration stars
     fluxtargs = select_flux_stars(host.get_sdss_catalog(), fluxrng, fluxfnout=None)
-    print 'Found', len(fluxtargs), 'Flux stars'
+    print('Found', len(fluxtargs), 'Flux stars')
     if removefluxdistance is not None:
         fluxsc = SkyCoord(fluxtargs['ra']*u.deg, fluxtargs['dec']*u.deg)
         targsc = SkyCoord(targs['ra']*u.deg, targs['dec']*u.deg)
         idx, d2d, d3d = fluxsc.match_to_catalog_sky(targsc)
         fluxsepmsk = d2d > removefluxdistance
         if np.sum(~fluxsepmsk) > 0:
-            print 'Removing', np.sum(~fluxsepmsk), 'Flux stars too close to program stars'
+            print('Removing', np.sum(~fluxsepmsk), 'Flux stars too close to program stars')
             fluxtargs = fluxtargs[fluxsepmsk]
             host._last_hecto_fluxsepmsk = fluxsepmsk
     if fluxfnout:
@@ -178,7 +180,7 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
 
     #add guide stars
     guidestars = select_guide_stars(host.get_sdss_catalog(), guidestarmagrng)
-    print 'Found', len(guidestars), 'guide stars'
+    print('Found', len(guidestars), 'guide stars')
     for t in guidestars:
         rastr = Angle(t['ra'], 'deg').to_string('hr', sep=':', precision=3)
         decstr = Angle(t['dec'], 'deg').to_string('deg', sep=':', precision=3)

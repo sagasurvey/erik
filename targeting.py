@@ -5,9 +5,14 @@ These functions are for the "Distant local groups" project target selection.
 """
 #important note: SDSS 'type' field: 3=galaxy, 6=star
 
-
 import numpy as np
 from matplotlib import pyplot as plt
+
+try:
+    import six
+except ImportErrir:
+    from astropy.extern import six
+urlopen = six.moves.urllib.request.urlopen
 
 from astropy import units as u
 
@@ -331,7 +336,7 @@ def find_gama(cat, host, raddeg, tol, matchfuture=True, whichgama='DR1'):
     ra0 = host.ra
     dec0 = host.dec
 
-    if isinstance(whichgama, basestring):
+    if isinstance(whichgama, six.string_types):
         g = get_gama(url=whichgama)
     else:
         g = whichgama
@@ -587,7 +592,7 @@ def sdss_IAU_id_to_ra_dec(sdssids, matchtocatalog=None):
     rex = re.compile(r'J(\d{2})(\d{2})(\d{2}(?:\.\d{1,2})?)'
                      r'([+-])(\d{2})(\d{2})(\d{2}(?:\.\d)?)')
 
-    if isinstance(sdssids, basestring):
+    if isinstance(sdssids, six.string_types):
         sdssids = [sdssids]
 
     ras = []
@@ -636,8 +641,8 @@ def remove_targets_with_remlist(cat, hostorhostname,
     matchtol : astropy Quantity
         How close the match has to be if the objid search fails
     """
-    import urllib2
     from astropy.coordinates import SkyCoord
+
 
     hostname = getattr(hostorhostname, 'name', hostorhostname)
     if hasattr(hostorhostname, 'nsaid'):
@@ -654,7 +659,7 @@ def remove_targets_with_remlist(cat, hostorhostname,
     objidstoremove = []
 
     if listfnorurl.startswith('http://'):
-        uo = urllib2.urlopen(listfnorurl)
+        uo = urlopen(listfnorurl)
         try:
             remlist_content = uo.read()
         finally:
@@ -713,7 +718,6 @@ def get_gama(fn=None, url='DR1'):
         `decmin`, `ramax`, and `ramin`.
     """
     import os
-    from urllib2 import urlopen
 
     from astropy.io import ascii, fits
     from hosts import download_with_progress_updates

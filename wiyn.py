@@ -1,4 +1,4 @@
-from __future__ import division
+from __future__ import division, print_function
 
 from astropy import units as u
 
@@ -38,6 +38,10 @@ For each host:
 
 import numpy as np
 
+try:
+    import six
+except ImportErrir:
+    from astropy.extern import six
 
 def select_fops(host, faintlimit=13.5, brightlimit=12., randomize=True):
     """
@@ -196,18 +200,18 @@ def construct_master_catalog(host, fnout=None, targetcat={}, fopcat=None,
 
     if fibermaglimit is not None:
         fmsk = targetcat['fiber2mag_r'] < fibermaglimit
-        print 'Fiber mag cut removes', np.sum(~fmsk), 'of', len(fmsk), 'objects'
+        print('Fiber mag cut removes', np.sum(~fmsk), 'of', len(fmsk), 'objects')
         targetcat = targetcat[fmsk]
 
-    print len(targetcat), 'objects'
+    print(len(targetcat), 'objects')
     if fopcat is None:
         fopcat = select_fops(host)
-    print len(fopcat), 'FOPS'
+    print(len(fopcat), 'FOPS')
     if skyradec is None:
         skyradec = select_sky_positions(host)
 
     if orderby:
-        if isinstance(orderby, basestring):
+        if isinstance(orderby, six.string_types):
             orderby = [orderby]
 
         for field in orderby:
@@ -216,8 +220,8 @@ def construct_master_catalog(host, fnout=None, targetcat={}, fopcat=None,
                 highz = np.where(pz > .1)[0]
                 lowz = np.where((-1 < pz)&(pz < .1))[0]
                 noz = np.where(pz==-1)[0]
-                print ('Found {0} objects at low photz, {1} at high, and {2} '
-                       'without photz'.format(len(lowz), len(highz), len(noz)))
+                print('Found {0} objects at low photz, {1} at high, and {2} '
+                      'without photz'.format(len(lowz), len(highz), len(noz)))
                 sorti = np.concatenate([lowz, noz, highz])
             elif field.startswith('-'):
                 sorti = np.argsort(targetcat[field[1:]])[::-1]
@@ -239,12 +243,12 @@ def construct_master_catalog(host, fnout=None, targetcat={}, fopcat=None,
     dra, ddec = usno_vs_sdss_offset(host.get_sdss_catalog(),
                                     host.get_usnob_catalog(),
                                     raiseerror=usnosdssoffsettol)
-    print 'USNO/SDSS offsets:', dra * 3600, ddec * 3600
+    print('USNO/SDSS offsets:', dra * 3600, ddec * 3600)
 
     if os.path.exists(fnout):
         raise ValueError('File for generating master catalog {0} already exists!'.format(fnout))
 
-    print 'Constucting catalog in', fnout
+    print('Constucting catalog in', fnout)
     with open(fnout, 'w') as fw:
         #first add host as center, and as object
         fw.write(_whydra_file_line(0001, 'Center'.format(host.nsaid), host.ra, host.dec, 'C'))
@@ -357,8 +361,7 @@ def update_master_catalog(oldmastercatfn, newmastercatfn,
 
         toremove[np.arange(len(toremove))[isobj][idx[dd < removecoordtol]]] = 'matched'
 
-        print sum(dd < removecoordtol), 'objects in master catalog matched to be removed of', len(removecoords.ra), 'possible'
-
+        print(sum(dd < removecoordtol), 'objects in master catalog matched to be removed of', len(removecoords.ra), 'possible')
     if consolidategrps is not None:
         pairs = []
         n = 2
@@ -408,7 +411,7 @@ def update_master_catalog(oldmastercatfn, newmastercatfn,
                 toremove[objidxs[msk][magsort[1:]]] = 'grpw' + str(objidxs[msk][magsort[0]])
                 nremoved += len(magsort) - 1
 
-        print 'Removed', nremoved, 'from', ngrps, 'clustered groups'
+        print('Removed', nremoved, 'from', ngrps, 'clustered groups')
 
     removedlines = []
     with open(newmastercatfn, 'w') as f:
@@ -448,7 +451,7 @@ def reprocess_master_catalog(mastercatfn, whydraoutputs=None):
     if whydraoutputs is None:
         basename = path.split(mastercatfn)[-1].split('.')[0]
         whydraoutputs = glob('hydra_targets/{basenm}*.hydra'.format(basenm=basename))
-    print 'Using existing catalogs', whydraoutputs, 'for removing from master'
+    print('Using existing catalogs', whydraoutputs, 'for removing from master')
 
     ids = []
     names = []
@@ -592,7 +595,7 @@ def generate_ast_file(mastercatfn, lst, obsepoch=None, whydrafiles=None,
     #used for faint mag cutting
     magre = re.compile(r'.*mag_(.+?)=([0-9]*?\.[0-9]*).*')
 
-    print 'Writing to', fnout
+    print('Writing to', fnout)
     with open(fnout, 'w') as fw:
         #first do the header
         fw.write('FIELD NAME: {0}\n'.format(finame))
@@ -620,9 +623,9 @@ def generate_ast_file(mastercatfn, lst, obsepoch=None, whydrafiles=None,
                     fw.write('\n')
 
     if scpname:
-        print 'SCP commands:'
-        print 'scp {0} {scpname}:/home/{scpusername}/hydra_simulator/whydra'.format(fnout, scpname=scpname, scpusername=scpusername)
-        print 'scp "{scpname}:/home/{scpusername}/hydra_simulator/whydra/{0}.hydra" hydra_targets'.format(finame, scpname=scpname, scpusername=scpusername)
+        print('SCP commands:')
+        print('scp {0} {scpname}:/home/{scpusername}/hydra_simulator/whydra'.format(fnout, scpname=scpname, scpusername=scpusername))
+        print('scp "{scpname}:/home/{scpusername}/hydra_simulator/whydra/{0}.hydra" hydra_targets'.format(finame, scpname=scpname, scpusername=scpusername))
 
 def imagelist_selected_fops(hydrafile, copytoclipboard=True, openurl=True):
     """
@@ -793,7 +796,7 @@ def generate_wiyn_cache(outfn, infns='hydra_targets/*.hydra'):
     """
     from glob import glob
 
-    if isinstance(infns, basestring):
+    if isinstance(infns, six.string_types):
         infns = glob(infns)
     else:
         newinfns = []

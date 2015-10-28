@@ -103,6 +103,11 @@ import sys
 
 import numpy as np
 
+try:
+    import six
+except ImportErrir:
+    from astropy.extern import six
+
 from astropy import units as u
 from astropy.cosmology import WMAP9  # for Z->distances
 from astropy import table
@@ -904,7 +909,7 @@ def upload_table_to_google(table, ssname, wsname, googleun=None, googlepasswd=No
 
     #now check if a worksheet with the requested name already exists
     create_new_ws = False
-    if isinstance(wsname, basestring):
+    if isinstance(wsname, six.string_types):
         if wsname not in [ws.title for ws in ss.worksheets()]:
             create_new_ws = True
 
@@ -915,7 +920,7 @@ def upload_table_to_google(table, ssname, wsname, googleun=None, googlepasswd=No
     else:
         if isinstance(wsname, int):
             ws = ss.get_worksheet(wsname)
-        elif isinstance(wsname, basestring):
+        elif isinstance(wsname, six.string_types):
             ws = ss.worksheet(wsname)
         else:
             raise TypeError('Could not find worksheet "{0}"'.format(wsname))

@@ -4,7 +4,14 @@ AAT observations.
 
 Note that priority levels 5 and 7 are only used if wise data is present
 """
+from __future__ import print_function
+
 import numpy as np
+
+try:
+    import six
+except ImportErrir:
+    from astropy.extern import six
 
 from astropy import units as u
 from astropy.coordinates import Angle
@@ -102,7 +109,7 @@ def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
 
     if pris is None:
         pris = prioritize_targets(catalog)
-    elif isinstance(pris, basestring):
+    elif isinstance(pris, six.string_types):
         pris = prioritize_targets(catalog, scheme=pris)
 
     skippedbadpri = 0
@@ -128,7 +135,7 @@ def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
         lines.append(' '.join(entry))
 
     if skippedbadpri > 0:
-        print 'skipped', skippedbadpri, 'objects for priorities not in 1-9'
+        print('skipped', skippedbadpri, 'objects for priorities not in 1-9')
 
     #add any manually-added targets
     entry.extend(manualtargetlines)
@@ -172,7 +179,7 @@ def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
         lines.append(' '.join(entry))
 
     lines.append('\n#Sky positions')
-    if isinstance(skyradec, basestring):
+    if isinstance(skyradec, six.string_types):
         with open(skyradec, 'r') as f:
             lines.extend(f.read().split('\n'))
     else:
@@ -291,8 +298,8 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
                             keptfibers.append(fibnum)
                             continue
                     namestoskip.append(nm)
-            print 'Kept the following fibers in due to zltabkeepfunc:', keptfibers
-            print 'Found', len(namestoskip) - prentslen, 'objects to remove in', lis
+            print('Kept the following fibers in due to zltabkeepfunc:', keptfibers)
+            print('Found', len(namestoskip) - prentslen, 'objects to remove in', lis)
 
     with open(masterfn) as fr:
         with open(outfn, 'w') as fw:
@@ -349,16 +356,16 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
                             pridone[pri] += 1
                         pritotal[pri] += 1
     if len(namestoskip) > 0:
-        print 'Had', len(namestoskip), 'unmatched list file objects:\n', namestoskip
+        print('Had', len(namestoskip), 'unmatched list file objects:\n', namestoskip)
 
     msg = 'Total remaining in each priority ({0} fluxes, {1} guides, and {2} skies not included): {3}'
-    print msg.format(fluxdone, guidesdone, skydone, pritotal)
+    print(msg.format(fluxdone, guidesdone, skydone, pritotal))
 
 
 def imagelist_fld_targets(fldlinesorfn, ttype='all', **kwargs):
     from targeting import sampled_imagelist
 
-    if isinstance(fldlinesorfn, basestring):
+    if isinstance(fldlinesorfn, six.string_types):
         with open(fldlinesorfn) as f:
             fldlines = f.read().split('\n')
     else:
