@@ -326,7 +326,8 @@ def parse_cfg_file(fn):
                 intab = True
                 fi += 1
 
-    return np.array(coords), np.array(targets), np.array(ranks), np.array(fields)
+    coords = SkyCoord(ra=[c.ra for c in coords], dec=[c.dec for c in coords])
+    return coords, np.array(targets), np.array(ranks), np.array(fields)
 
 
 
