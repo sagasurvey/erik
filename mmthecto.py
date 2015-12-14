@@ -127,7 +127,7 @@ def colorcut_mask(targets, colorcut):
 
 def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxrank=1,
                      fluxrng=(17., 17.7), repeatflux=1, guidestarmagrng=(14, 15),
-                     removefluxdistance=None):
+                     removefluxdistance=None, wrapraat=360*u.deg):
     """
     given a host object `host`, an SDSS target catalog `targs`, and ranks for
     those targets `targetranks`, output the Hectospec catalog Table and (if
@@ -145,7 +145,7 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
     #entries for the actual targets
     print('Including', len(targs), 'targets')
     for i, (t, rank) in enumerate(zip(targs, targetranks)):
-        rastr = Angle(t['ra'], 'deg').to_string('hr', sep=':', precision=3)
+        rastr = Angle(t['ra'], 'deg').wrap_at(wrapraat).to_string('hr', sep=':', precision=3)
         decstr = Angle(t['dec'], 'deg').to_string('deg', sep=':', precision=3)
         objnm = str(t['objID'])
         mag = '{0:.2f}'.format(t['r'])
@@ -166,10 +166,10 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
             fluxtargs = fluxtargs[fluxsepmsk]
             host._last_hecto_fluxsepmsk = fluxsepmsk
     if fluxfnout:
-        write_flux_stars(fluxfnout, fluxtargs)
+        write_flux_stars(fluxfnout, fluxtargs, wrapraat)
 
     for t in fluxtargs:
-        rastr = Angle(t['ra'], 'deg').to_string('hr', sep=':', precision=3)
+        rastr = Angle(t['ra'], 'deg').wrap_at(wrapraat).to_string('hr', sep=':', precision=3)
         decstr = Angle(t['dec'], 'deg').to_string('deg', sep=':', precision=3)
         objnm = str(t['objID'])
         mag = '{0:.2f}'.format(t['r'])
@@ -182,7 +182,7 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
     guidestars = select_guide_stars(host.get_sdss_catalog(), guidestarmagrng)
     print('Found', len(guidestars), 'guide stars')
     for t in guidestars:
-        rastr = Angle(t['ra'], 'deg').to_string('hr', sep=':', precision=3)
+        rastr = Angle(t['ra'], 'deg').wrap_at(wrapraat).to_string('hr', sep=':', precision=3)
         decstr = Angle(t['dec'], 'deg').to_string('deg', sep=':', precision=3)
         objnm = str(t['objID'])
         mag = '{0:.2f}'.format(t['r'])
@@ -197,7 +197,7 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
 
     tab = Table(names=catlines[0].split('\t'), dtype=['f', 'f', 'S50', 'S2', 'S20', 'f'])
     for e in tabentries:
-        e[0] = Angle(e[0], unit=u.hour).degree
+        e[0] = Angle(e[0], unit=u.hour).wrap_at(wrapraat).degree
         e[1] = Angle(e[1], unit=u.degree).degree
         tab.add_row(e)
     return tab
@@ -248,10 +248,15 @@ def select_flux_stars(cat, magrng=(17, 17.7), extcorr=False, fluxfnout=None):
 
     return cat[msk]
 
-def write_flux_stars(fluxfnout, cat):
+def write_flux_stars(fluxfnout, cat, wrapraat=None):
+    if wrapraat is None:
+        catra = cat['ra']
+    else:
+        catra = Angle(cat['ra'], u.deg).wrap_at(wrapraat).value
+
     if 'psf_r' in cat.colnames:
         names = 'RA DEC u_psf g_psf r_psf i_psf z_psf extinction_r'.split()
-        dat = [cat['ra'],
+        dat = [catra,
                cat['dec'],
                cat['psf_u'],
                cat['psf_g'],
@@ -263,7 +268,7 @@ def write_flux_stars(fluxfnout, cat):
     else:
         print('Could not find psf mags so falling back on regular mags...')
         names = 'RA DEC u_psf g r i z extinction_r'.split()
-        dat = [cat['ra'],
+        dat = [catra,
                cat['dec'],
                cat['u'],
                cat['g'],
