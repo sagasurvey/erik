@@ -501,8 +501,12 @@ def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
             ras = ras.ra
         else:
             # assume it's a Table
-            decs = ras['dec']
-            ras = ras['ra']
+            if 'DEC' in ras.colnames and 'RA' in ras.colnames:
+                decs = ras['DEC']
+                ras = ras['RA']
+            else:
+                decs = ras['dec']
+                ras = ras['ra']
 
     if len(ras) != len(decs):
         raise ValueError('ras and decs not the same size!')
