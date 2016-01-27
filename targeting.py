@@ -626,7 +626,7 @@ def sdss_IAU_id_to_ra_dec(sdssids, matchtocatalog=None):
 _DEFAULT_TREM_URL = 'http://docs.google.com/spreadsheets/d/1Y3nO7VyU4jDiBPawCs8wJQt2s_PIAKRj-HSrmcWeQZo/export?format=csv&gid=1379081675'
 def remove_targets_with_remlist(cat, hostorhostname,
                                 listfnorurl=_DEFAULT_TREM_URL,
-                                matchtol=0.1*u.arcsec):
+                                matchtol=0.1*u.arcsec, maskonly=False):
     """
     Use either a local csv copy, or a URL to the google spreadsheet of the
     target remove list to remove manually/by-eye filtered targets.
@@ -644,6 +644,9 @@ def remove_targets_with_remlist(cat, hostorhostname,
         the target remove list.
     matchtol : astropy Quantity
         How close the match has to be if the objid search fails
+    maskonly : bool
+        If True, return the mask into the catalog (mask value=True to *not*
+        remove). False returns a sub-selected catalog
     """
     from astropy.coordinates import SkyCoord
 
@@ -699,7 +702,11 @@ def remove_targets_with_remlist(cat, hostorhostname,
     else:
         print('Removed', nmatched, 'objects for', hostname)
 
-    return cat[~np.in1d(objids, objidstoremove)]
+    msk = ~np.in1d(objids, objidstoremove)
+    if maskonly:
+        return msk
+    else:
+        return cat[msk]
 
 
 _cachedgama = {}

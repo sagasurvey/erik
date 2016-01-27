@@ -435,6 +435,9 @@ class NSAHost(object):
         Loads and retrieves the data for the SDSS environs catalog associated
         with this host.
 
+        Note that this automatically converts all-upper tables to "mixed-case"
+        for backwards-compatibility.
+
         Returns
         -------
         cat : astropy.table.Table
@@ -457,6 +460,20 @@ class NSAHost(object):
             self._cached_sdss = self.load_and_reprocess_sdss_catalog(fn)
         return self._cached_sdss
 
+
+    catalog_cases_to_convert = ['ra', 'dec', 'rhost', 'type', 'phot_sg', 'rhost_kpc', 'objID']
+    for band in 'ugriz':
+        catalog_cases_to_convert.append(band)
+        catalog_cases_to_convert.append('psf_' + band)
+        catalog_cases_to_convert.append('fibermag_' + band)
+    catalog_aliases = {nm.upper():nm for nm in catalog_cases_to_convert}
+    catalog_aliases['RHOST_ARCM'] = 'rhost'
+    catalog_aliases['PHOTPTYPE'] = 'type'
+    for band in 'ugriz':
+        catalog_aliases['EXTINCTION_' + band.upper()] = 'A' + band
+    del band, catalog_cases_to_convert # clean up the namespace
+
+
     def load_and_reprocess_sdss_catalog(self, fn):
         from astropy.io import ascii, fits
         from astropy.table import Table, Column, MaskedColumn
@@ -466,6 +483,11 @@ class NSAHost(object):
             tab = Table(fits.getdata(fn))
         else:
             tab = ascii.read(fn, delimiter=',')
+
+        # if any of the upper-case versions are present, create mixed-case aliases
+        for real, alias in self.catalog_aliases.items():
+            if real in tab.colnames and alias not in tab.colnames:
+                tab[alias] = tab[real]
 
         # add UBVRI converted from SDSS mags
         U, B, V, R, I = sdss_to_UBVRI(*[tab[b] for b in 'ugriz'])
