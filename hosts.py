@@ -1211,8 +1211,11 @@ def get_saga_hosts_from_google(googleusername=None, googlepasswd=None,
         rowvals = [s.row_values(row) for row in range(startrow, endrow)]
 
         for r in rowvals:
+            if ''.join(r).strip() == '':
+                #blank line
+                continue
             if not r[2].strip():
-                print('Entry', rowvals, 'does not have an NSA number, cannot use')
+                print('Entry', r, 'does not have an NSA number, cannot use')
             nsanum = int(r[2])
 
             names = [r[0].strip()]
