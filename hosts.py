@@ -464,13 +464,13 @@ class NSAHost(object):
     catalog_cases_to_convert = ['ra', 'dec', 'rhost', 'type', 'phot_sg', 'rhost_kpc', 'objID']
     for band in 'ugriz':
         catalog_cases_to_convert.append(band)
-        catalog_cases_to_convert.append('psf_' + band)
         catalog_cases_to_convert.append('fibermag_' + band)
     catalog_aliases = {nm.upper():nm for nm in catalog_cases_to_convert}
     catalog_aliases['RHOST_ARCM'] = 'rhost'
     catalog_aliases['PHOTPTYPE'] = 'type'
     for band in 'ugriz':
         catalog_aliases['EXTINCTION_' + band.upper()] = 'A' + band
+        catalog_aliases['PSFMAG_' + band.upper()] = 'psf_' + band
     del band, catalog_cases_to_convert # clean up the namespace
 
 

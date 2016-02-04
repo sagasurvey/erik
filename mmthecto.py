@@ -157,8 +157,12 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
     fluxtargs = select_flux_stars(host.get_sdss_catalog(), fluxrng, fluxfnout=None)
     print('Found', len(fluxtargs), 'Flux stars')
     if removefluxdistance is not None:
+        if isinstance(removefluxdistance, tuple):
+            removefluxdistance, removefluxmsk = removefluxdistance
+        else:
+            removefluxmsk = slice(None)
         fluxsc = SkyCoord(fluxtargs['ra']*u.deg, fluxtargs['dec']*u.deg)
-        targsc = SkyCoord(targs['ra']*u.deg, targs['dec']*u.deg)
+        targsc = SkyCoord(targs['ra']*u.deg, targs['dec']*u.deg)[removefluxmsk]
         idx, d2d, d3d = fluxsc.match_to_catalog_sky(targsc)
         fluxsepmsk = d2d > removefluxdistance
         if np.sum(~fluxsepmsk) > 0:
