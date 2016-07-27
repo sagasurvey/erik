@@ -232,7 +232,7 @@ def select_targets(host, band='r', faintlimit=21, brightlimit=15,
     return res[finalmsk]
 
 
-def colorcut_mask(cat, colorcuts, verbose=False):
+def colorcut_mask(cat, colorcuts, deredden=True, verbose=False):
     """
     Apply color cuts to a photometry catalog
 
@@ -248,6 +248,8 @@ def colorcut_mask(cat, colorcuts, verbose=False):
         also have an entry 'funcs' which is a list of functions accepting the
         catalog as the sole argument and outputing masks to add more complex
         color cuts
+    deredden : bool
+        Use dereddened/extinction-corrected colors instead of raw colors
     verbose : bool
         If True, prints out what each cut does
 
@@ -268,7 +270,10 @@ def colorcut_mask(cat, colorcuts, verbose=False):
                     colorcutmsk = colorcutmsk & fmsk
             else:
                 c1, c2 = k.split('-')
-                color = cat[c1] - cat[c2]
+                if deredden:
+                    color = (cat[c1] - cat['A'+c1]) - (cat[c2] - cat['A'+c2])
+                else:
+                    color = cat[c1] - cat[c2]
 
                 if len(v) == 3:
                     bluec, redc, uncfactor = v
@@ -280,7 +285,7 @@ def colorcut_mask(cat, colorcuts, verbose=False):
                     if c2e not in cat.colnames:
                         c2e = c2+'err'
 
-                    uncfactor = uncfactor * (cat[c1e] + cat[c2e])
+                    uncfactor = uncfactor * (cat[c1e]**2 + cat[c2e]**2)**0.5
 
                 else:
                     uncfactor = 0
@@ -626,7 +631,7 @@ def sdss_IAU_id_to_ra_dec(sdssids, matchtocatalog=None):
 _DEFAULT_TREM_URL = 'http://docs.google.com/spreadsheets/d/1Y3nO7VyU4jDiBPawCs8wJQt2s_PIAKRj-HSrmcWeQZo/export?format=csv&gid=1379081675'
 def remove_targets_with_remlist(cat, hostorhostname,
                                 listfnorurl=_DEFAULT_TREM_URL,
-                                matchtol=0.1*u.arcsec, maskonly=False):
+                                matchtol=0.1*u.arcsec, maskonly=False, verbose=True):
     """
     Use either a local csv copy, or a URL to the google spreadsheet of the
     target remove list to remove manually/by-eye filtered targets.
@@ -647,6 +652,9 @@ def remove_targets_with_remlist(cat, hostorhostname,
     maskonly : bool
         If True, return the mask into the catalog (mask value=True to *not*
         remove). False returns a sub-selected catalog
+    verbose : bool or 'warning'
+        Print informational messages.  If 'warning', only prints if no host
+        matched.
     """
     from astropy.coordinates import SkyCoord
 
@@ -697,9 +705,9 @@ def remove_targets_with_remlist(cat, hostorhostname,
                     msg = 'Could not find a match for objid {0} of {1}, closest is {2}'
                     print(msg.format(objid, hostname, sep.to(u.arcsec)))
 
-    if nmatched == 0:
+    if verbose and nmatched == 0:
         print('No matches found for host "{0}" in remove list. Maybe you mis-typed something?'.format(hostname))
-    else:
+    elif verbose and verbose != 'warning':
         print('Removed', nmatched, 'objects for', hostname)
 
     msk = ~np.in1d(objids, objidstoremove)

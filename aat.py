@@ -114,6 +114,9 @@ def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
 
     skippedbadpri = 0
     extranotes = 'extra_aat_notes' in catalog.colnames
+
+    f2magnm = 'FIBER2MAG_R' if 'FIBER2MAG_R' in catalog.colnames else 'fiber2mag_r'
+
     for ci, pri in zip(catalog[idxs], pris[idxs]):
         if not 1 <= pri <= 9:
             skippedbadpri += 1
@@ -126,7 +129,7 @@ def produce_master_fld(host, utcobsdate, catalog, pris, guidestars,
         entry.append(Angle(ci['dec'], u.deg).to_string(sep=' ', alwayssign=True, precision=2))
         entry.append('P')
         entry.append(str(pri))
-        entry.append('{0:0.2f}'.format(ci['fiber2mag_r']))
+        entry.append('{0:0.2f}'.format(ci[f2magnm]))
         entry.append('0')
         entry.append('magcol=fiber2mag_r, model_r={0:.2f}'.format(ci['r']))
         if extranotes:
