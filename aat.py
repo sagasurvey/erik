@@ -258,6 +258,7 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
     skydone = fluxdone = guidesdone = 0
     pridone = dict([(i, 0) for i in range(10) if i != 0])
     pritotal = dict([(i, 0) for i in range(10) if i != 0])
+    priall = dict([(i, 0) for i in range(10) if i != 0])
 
     namestoskip = []
     if listorem:
@@ -348,6 +349,8 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
                         ls = l.split()
                         pri = int(ls[8])
 
+                        priall[pri] += 1
+
                         #skip *unless* dontrrempri == pri
                         if ls[0] in namestoskip:
                             del namestoskip[namestoskip.index(ls[0])]
@@ -358,11 +361,13 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
                             fw.write(l)
                             pridone[pri] += 1
                         pritotal[pri] += 1
+
     if len(namestoskip) > 0:
         print('Had', len(namestoskip), 'unmatched list file objects:\n', namestoskip)
 
-    msg = 'Total remaining in each priority ({0} fluxes, {1} guides, and {2} skies not included): {3}'
-    print(msg.format(fluxdone, guidesdone, skydone, pritotal))
+    pritotalperc = {pri: None if priall[pri]==0 else 100.*pritotal[pri]/priall[pri] for pri in pritotal}
+    msg = 'Total remaining in each priority ({0} fluxes, {1} guides, and {2} skies not included):\n{3}\n{4}%'
+    print(msg.format(fluxdone, guidesdone, skydone, pritotal, pritotalperc))
 
 
 def imagelist_fld_targets(fldlinesorfn, ttype='all', **kwargs):
@@ -461,7 +466,7 @@ def select_sky_positions(host, nsky=250, sdsscat=None, usnocat=None,
     sdsscat : Table or None
         The SDSS catalog for this host or None to use `get_sdss_catalog`
     usnocat : Table or None
-        The SDSS catalog for this host or None to use `get_usnob_catalog`
+        The USNO catalog for this host or None to use `get_usnob_catalog`
     nearnesslimitarcsec : float or Quantity
         How close a position has to be to a catalog entry to get eliminated
     outfn : None or str
@@ -488,7 +493,8 @@ def select_sky_positions(host, nsky=250, sdsscat=None, usnocat=None,
     neardeg = nearnesslimitarcsec.to(u.deg).value
 
     skdt = cKDTree(np.array([sdsscat['ra'], sdsscat['dec']]).T)
-    ukdt = cKDTree(np.array([usnocat['RA'], usnocat['DEC']]).T)
+    if usnocat is not False:
+        ukdt = cKDTree(np.array([usnocat['RA'], usnocat['DEC']]).T)
 
     if rad is None:
         raddeg = host.environsarcmin / 60.
@@ -509,9 +515,11 @@ def select_sky_positions(host, nsky=250, sdsscat=None, usnocat=None,
         dec = host.dec + rs * np.cos(thetas)
 
         dsdss = skdt.query(np.array([ra, dec]).T)[0]
-        dusno = ukdt.query(np.array([ra, dec]).T)[0]
+        dusno = None if usnocat is False else ukdt.query(np.array([ra, dec]).T)[0]
 
-        msk = (dsdss > neardeg) & (dusno > neardeg)
+        msk = (dsdss > neardeg)
+        if dusno is not None:
+            msk = msk & (dusno > neardeg)
 
         ras = np.append(ras, ra[msk])
         decs = np.append(decs, dec[msk])
