@@ -169,6 +169,11 @@ def generate_catalog(host, targs, targetranks, fnout=None, fluxfnout=None, fluxr
             print('Removing', np.sum(~fluxsepmsk), 'Flux stars too close to program stars')
             fluxtargs = fluxtargs[fluxsepmsk]
             host._last_hecto_fluxsepmsk = fluxsepmsk
+
+    nflux = np.sum(fluxtargs['RHOST_ARCM'] <= 30)
+    print('Final flux star count:', len(fluxtargs), 'and', nflux,'are in 1 deg FOV')
+    if nflux<8:
+        print('WARNING: < 8 flux stars found within the 1 degree diameter field.  Probably need more.')
     if fluxfnout:
         write_flux_stars(fluxfnout, fluxtargs, wrapraat)
 
