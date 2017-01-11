@@ -1,3 +1,5 @@
+import numpy as np
+
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 
@@ -45,3 +47,30 @@ def make_cutout_comparison_table(dcat, dhtml=True, doprint=True):
         return display.HTML(htmlstr)
     else:
         return htmlstr
+
+def fluxivar_to_mag_magerr(flux, ivar):
+    """
+    returns mag, mag_err as Quantities
+    """
+    mag = np.array(22.5 - 2.5*np.log10(flux))
+    flux_err = ivar**-0.5
+    mag_err = 2.5/np.log(10) * flux_err/flux
+    return mag*u.mag, mag_err.value*u.mag
+
+
+DECALS_AP_SIZES = [0.5,0.75,1.0,1.5,2.0,3.5,5.0,7.0] * u.arcsec
+
+def compute_sb(rad, apflux):
+    """
+    `rad` is the radius of the aperture
+    `apflux` is the flux within the aperture
+
+    returns SB as Quantity
+    """
+    if len(apflux.shape)==2:
+        idxs = np.where(DECALS_AP_SIZES==rad)[0]
+        assert len(idxs)==1, 'No aperture with size {}'.format(rad)
+
+        apflux = apflux[:, idxs[0]]
+    A = 2.5*np.log10(np.pi*(rad.to(u.arcsec).value)**2)
+    return np.array(22.5 - 2.5*np.log10(apflux) + A) * u.mag * u.arcsec**-2
