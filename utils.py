@@ -280,7 +280,7 @@ def get_mcconn_table(fnorurl='http://www.astro.uvic.ca/~alan/Nearby_Dwarfs_Datab
     return t
 
 
-def get_google_oauth2_credentials(clientsecretjsonorfn, useserver=True):
+def get_google_oauth2_credentials(clientsecretjsonorfn, useserver=True, force_prompt=False):
     import sys
     import json
     import socket
@@ -318,10 +318,14 @@ def get_google_oauth2_credentials(clientsecretjsonorfn, useserver=True):
     else:
         csjson = clientsecretjsonorfn
 
+    kwargs = {}
+    if force_prompt:
+        kwargs['prompt'] = "consent"
+
     flow = OAuth2WebServerFlow(client_id=csjson[u'client_id'],
                                client_secret=csjson['client_secret'],
                                scope=['https://spreadsheets.google.com/feeds'],
-                               redirect_uri=csjson['redirect_uris'][0])
+                               redirect_uri=csjson['redirect_uris'][0], **kwargs)
     if KeyringStorage is None:
         storage = FileStorage('OAuthcredentials.txt')
     else:

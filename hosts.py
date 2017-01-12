@@ -1159,7 +1159,12 @@ def get_saga_hosts_from_google(googleusername=None, googlepasswd=None,
 
     if clientsecretjsonorfn:
         credentials = get_google_oauth2_credentials(clientsecretjsonorfn)
-        c = gspread.authorize(credentials)
+        try:
+            c = gspread.authorize(credentials)
+        except:
+            print("It seems you had a problem authorizing.  You might want to "
+                  "clearing the OAuthcredentials.txt file...")
+            raise
     else:
         if googleusername is None:
             googleusername = getpass.getpass('Google username:')
@@ -1200,7 +1205,7 @@ def get_saga_hosts_from_google(googleusername=None, googlepasswd=None,
             hosts.append(NSAHost(nsanum, othernames))
     else:
         col1 = s.col_values(1)
-        startrow = col1.index('SAGA Name') + 2
+        startrow = col1.index('SAGA') + 2
         endrow = startrow
         for v in col1[(startrow-1):]:
             endrow += 1
