@@ -48,10 +48,16 @@ def make_cutout_comparison_table(dcat, dhtml=True, doprint=True):
     else:
         return htmlstr
 
-def fluxivar_to_mag_magerr(flux, ivar):
+def fluxivar_to_mag_magerr(flux, ivar, deunit=True):
     """
     returns mag, mag_err as Quantities
     """
+    flux = u.Quantity(flux, copy=False)
+    ivar = u.Quantity(ivar, copy=False)
+    if deunit:
+        flux = u.Quantity(flux.value, u.dimensionless_unscaled)
+        ivar = u.Quantity(ivar.value, u.dimensionless_unscaled)
+
     mag = np.array(22.5 - 2.5*np.log10(flux))
     flux_err = ivar**-0.5
     mag_err = 2.5/np.log(10) * flux_err/flux
