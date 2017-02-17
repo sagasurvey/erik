@@ -126,6 +126,11 @@ function run(){
   var lines;
   _zoom = $("#zoom").val()
   _layer = $("#layer").val()
+  if (_layer == "sdssco") {
+    // This is because there seems to be an offset of 1 in the zoom scale for the SDSS from DECaLS and
+    // DECaLS itself... plate scales?
+    _zoom = parseInt(_zoom) - 1;
+  }
   lines = $("#input").val().split(/\n/);
   parseHeader(lines.shift());
   if (_i_ra == -1 || _i_dec == -1){
