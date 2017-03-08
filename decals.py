@@ -3,13 +3,20 @@ import numpy as np
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 
-def make_cutout_comparison_table(dcat, dhtml=True, doprint=True):
+
+def band_to_idx(band):
+    return list('ugrizy').index(band)
+
+
+def make_cutout_comparison_table(dcat, dhtml=True, doprint=True, inclres=False, inclmod=False, inclsdss=True, add_annotation=[]):
     """
     Produces a table comparing DECaLS and SDSS objects side-by-side
 
     `dcat` should be a *DECaLS* catalog, not SDSS
     """
     de_cutout_url = 'http://legacysurvey.org/viewer/jpeg-cutout/?ra={0.ra.deg}&dec={0.dec.deg}&layer=decals-dr3&pixscale=0.1&bands=grz'
+    demod_cutout_url = 'http://legacysurvey.org/viewer/jpeg-cutout/?ra={0.ra.deg}&dec={0.dec.deg}&layer=decals-dr3-model&pixscale=0.1&bands=grz'
+    deres_cutout_url = 'http://legacysurvey.org/viewer/jpeg-cutout/?ra={0.ra.deg}&dec={0.dec.deg}&layer=decals-dr3-resid&pixscale=0.1&bands=grz'
     sd_cutout_url = 'http://legacysurvey.org/viewer/jpeg-cutout/?ra={0.ra.deg}&dec={0.dec.deg}&layer=sdssco&pixscale=0.1&bands=gri'
 
     if doprint:
@@ -21,26 +28,46 @@ def make_cutout_comparison_table(dcat, dhtml=True, doprint=True):
         dviewurl = 'http://legacysurvey.org/viewer?ra={}&dec={}'.format(row['ra'], row['dec'])
         sviewurl = 'http://skyserver.sdss.org/dr12/en/tools/chart/navi.aspx?ra={}&dec={}'.format(row['ra'], row['dec'])
         sc = SkyCoord(row['ra'], row['dec'], unit=u.deg)
-        objstr = '{}_{}<br>RA={:.4f}<br>Dec={:.4f}<br>r={:.2f}<br>sb={:.2f}<br>anymsk={}<br>allmsk={}'.format(row['brickid'],
-            row['objid'], row['ra'], row['dec'], row['r'], row['sb_r_0.5'], row['decam_anymask'], row['decam_allmask'])
+
+        inforows = ['{}_{}'.format(row['brickid'], row['objid'])]
+        for infocolnm in ['ra', 'dec', 'r', 'sb_r_0.5', 'decam_anymask', 'decam_allmask'] + list(add_annotation):
+            if infocolnm in row.colnames:
+                inforows.append('{}={}'.format(infocolnm, row[infocolnm]))
+        objstr = '<br>'.join(inforows)
+
         deimg = '<a href="{}"><img src="{}"></a>'.format(dviewurl, de_cutout_url.format(sc))
         sdimg = '<a href="{}"><img src="{}"></a>'.format(sviewurl, sd_cutout_url.format(sc))
-        tabrows.append('<tr><td>{}</td><td>{}</td><td>{}</td></tr>'.format(objstr, deimg, sdimg))
+
+        headerelems = ['obj', 'DECALS']
+        imgs = [objstr, deimg]
+
+        if inclmod:
+            imgs.append('<a href="{}"><img src="{}"></a>'.format(sviewurl, demod_cutout_url.format(sc)))
+            headerelems.append('DECALS models')
+        if inclres:
+            imgs.append('<a href="{}"><img src="{}"></a>'.format(sviewurl, deres_cutout_url.format(sc)))
+            headerelems.append('DECALS residuals')
+        if inclsdss:
+            imgs.append('<a href="{}"><img src="{}"></a>'.format(sviewurl, sd_cutout_url.format(sc)))
+            headerelems.append('SDSS')
+
+
+        tabrows.append('<tr><td>' + '</td><td>'.join(imgs) + '</td></tr>')
         if doprint:
             print(row['brickname']+'_'+str(row['objid']), row['ra'], row['dec'])
+
+    headerelems
 
     htmlstr = """
     <table>
 
     <tr>
-    <th>obj</th>
-    <th>DECALS</th>
-    <th>SDSS</th>
+    <th>{}</th>
     </tr>
 
     {}
     </table>
-    """.format('\n'.join(tabrows))
+    """.format('</th><th>'.join(headerelems), '\n'.join(tabrows))
 
     if dhtml:
         from IPython import display
