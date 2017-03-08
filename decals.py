@@ -8,6 +8,12 @@ def band_to_idx(band):
     return list('ugrizy').index(band)
 
 
+def subselect_aperture(apmags, band, apsize=1*u.arcsec):
+    if apsize is None:
+        return apmags[:, band_to_idx(band), :]
+    else:
+        return apmags[:, band_to_idx(band), DECALS_AP_SIZES == apsize][:, 0]
+
 def make_cutout_comparison_table(dcat, dhtml=True, doprint=True, inclres=False, inclmod=False, inclsdss=True, add_annotation=[]):
     """
     Produces a table comparing DECaLS and SDSS objects side-by-side
