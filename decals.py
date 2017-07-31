@@ -123,3 +123,34 @@ def brickname_to_catalog_url(brickname, drnum, baseurl=_NERSC_BASE):
 
     return catalogurl + '/' + dirnm + '/tractor-' + brickname + '.fits'
 
+
+def show_in_decals(ra, dec=None,
+                   urltempl='http://legacysurvey.org/viewer?ra={}&dec={}',
+                   show=True):
+    """
+    Get the url for the supplied object to view in decals, and possibly actually
+    display it in the browser.
+
+    ra/dec can be in degrees, or if just ra is given it will be taken to be a
+    host object, a singular SkyCoord,
+    """
+    import webbrowser
+
+    if dec is None:
+        obj = ra
+        if hasattr(obj, 'coords'):
+            coo = obj.coords
+        elif hasattr(obj, 'ra') and hasattr(obj, 'dec'):
+            coo = obj
+        else:
+            coo = SkyCoord.guess_from_table(obj, unit=u.deg)
+    else:
+        coo = SkyCoord(ra, dec, unit=u.deg)
+
+    if coo.shape != tuple():
+        raise ValueError('cant use show_in_decals with non-scalar input')
+
+    url = urltempl.format(coo.ra.deg, coo.dec.deg)
+    if show:
+        webbrowser.open(url)
+    return url
