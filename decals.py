@@ -113,3 +113,13 @@ def compute_sb(rad, apflux):
         apflux = apflux[:, idxs[0]]
     A = 2.5*np.log10(np.pi*(rad.to(u.arcsec).value)**2)
     return np.array(22.5 - 2.5*np.log10(apflux) + A) * u.mag * u.arcsec**-2
+
+
+_NERSC_BASE = 'http://portal.nersc.gov/project/cosmo/data/legacysurvey/'
+def brickname_to_catalog_url(brickname, drnum, baseurl=_NERSC_BASE):
+    catalogurl = baseurl + '/dr' + str(drnum) + '/tractor'
+
+    dirnm = brickname[:3]
+
+    return catalogurl + '/' + dirnm + '/tractor-' + brickname + '.fits'
+
