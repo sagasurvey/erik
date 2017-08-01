@@ -1,5 +1,7 @@
 import numpy as np
 
+from scipy import interpolate
+
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 from astropy import table
@@ -97,6 +99,17 @@ def fluxivar_to_mag_magerr(flux, ivar, deunit=True):
     mag_err = 2.5/np.log(10) * flux_err/flux
     return mag*u.mag, mag_err.value*u.mag
 
+def mags_catalog(cat):
+    if 'decam_flux' in cat.colnames:
+        m, e = fluxivar_to_mag_magerr(cat['decam_flux'], cat['decam_flux_ivar'])
+        cat['decam_mag'] = m
+        cat['decam_mag_err'] = e
+    else:
+        for band in 'ugrizY':
+            m, e = fluxivar_to_mag_magerr(cat['flux_'+band], cat['flux_ivar_'+band])
+            cat['mag_'+band] = m
+            cat['mag_err_'+band] = e
+
 
 DECALS_AP_SIZES = [0.5,0.75,1.0,1.5,2.0,3.5,5.0,7.0] * u.arcsec
 
@@ -112,8 +125,99 @@ def compute_sb(rad, apflux):
         assert len(idxs)==1, 'No aperture with size {}'.format(rad)
 
         apflux = apflux[:, idxs[0]]
+
     A = 2.5*np.log10(np.pi*(rad.to(u.arcsec).value)**2)
     return np.array(22.5 - 2.5*np.log10(apflux) + A) * u.mag * u.arcsec**-2
+
+decam_band_name_to_idx = {nm:i for i, nm in enumerate('ugrizy')}
+
+def aperture_sbs_catalog(cat, bandname='r'):
+    """
+    Takes a DECaLS tractor catalog and adds surface brightness profiles for the
+    requested band to it for each of the decals flux apertures.
+    """
+    bandidx = decam_band_name_to_idx[bandname]
+
+    if 'decam_apflux' in cat.colnames:
+        ap_fluxes = cat['decam_apflux'][:, bandidx, :]
+    elif 'apflux_' + bandname in cat.colnames:
+        ap_fluxes = cat['apflux_' + bandname]
+
+    for ap in DECALS_AP_SIZES:
+        strnm = str(ap.value).replace('.0','').replace('.','p')
+        cat['sb_{}_{}'.format(bandname, strnm)] = compute_sb(ap, ap_fluxes)
+
+def interpolate_catalog_sb(cat, bandname='r', radtype='eff',
+                           sbname='sbeff_r', radname='rad_sb',
+                           loopfunc=lambda x:x):
+    """
+    Takes a DECaLS tractor catalog and adds r-band half-light surface brightness
+    to it.
+
+    ``radtype`` can be "eff" for model-determined reff, or a angle-unit quantity
+    for a fixed aperture SB
+
+    For details/tests that this function works, see the
+    "DECALS low-SB_completeness figures" notebook.
+    """
+    bandidx = decam_band_name_to_idx[bandname]
+
+    if 'decam_apflux' in cat.colnames:
+        r_ap_fluxes = cat['decam_apflux'][:, bandidx, :]
+    elif 'apflux_' + bandname in cat.colnames:
+        r_ap_fluxes = cat['apflux_' + bandname]
+    else:
+        raise ValueError('found no valid {}-band apflux column!'.format(bandname))
+    assert r_ap_fluxes.shape[-1] == 8, 'Column does not have 8 apertures'
+
+    expflux_r = np.empty_like(r_ap_fluxes[:, 0])
+    rad = np.empty(len(r_ap_fluxes[:, 0]))
+    ap_sizesv = DECALS_AP_SIZES.to(u.arcsec).value
+
+    intr = interpolate.BarycentricInterpolator(ap_sizesv, [0]*len(ap_sizesv))
+
+    if loopfunc == 'ProgressBar':
+        from astropy.utils.console import ProgressBar
+        loopfunc = lambda x: ProgressBar(x)
+    elif loopfunc == 'NBProgressBar':
+        from astropy.utils.console import ProgressBar
+        loopfunc = lambda x: ProgressBar(x, ipython_widget=True)
+    elif loopfunc == 'tqdm':
+        import tqdm
+        loopfunc = lambda x: tqdm.tqdm(x)
+    elif loopfunc == 'tqdm_notebook':
+        import tqdm
+        loopfunc = lambda x: tqdm.tqdm_notebook(x)
+
+    for i in loopfunc(range(len(r_ap_fluxes))):
+        f = r_ap_fluxes[i]
+
+        if radtype != 'eff':
+            r = radtype
+        elif cat['type'][i] == 'PSF ':
+            if 'decam_psfsize' in cat.colnames:
+                r = cat['decam_psfsize'][i, bandidx]
+            else:
+                r = cat['psfsize_' + bandname][i]
+        elif cat['type'][i] == 'DEV ':
+            if 'shapeDev_r' in cat.colnames:
+                r = cat['shapeDev_r' ][i]
+            else:
+                # DR4 changed to all lower-case... WWHHHHYYY!!?!?!??!?!?!?!?
+                r = cat['shapedev_r'][i]
+        else:
+            if 'shapeExp_r' in cat.colnames:
+                r = cat['shapeExp_r'][i]
+            else:
+                # DR4 changed to all lower-case... WWHHHHYYY!!?!?!??!?!?!?!?
+                r = cat['shapeexp_r'][i]
+
+        intr.set_yi(f)
+        expflux_r[i] = intr(r)
+        rad[i] = r
+
+    cat[sbname] = compute_sb(rad*u.arcsec, np.array(expflux_r))
+    cat[radname] = rad*u.arcsec
 
 
 _NERSC_BASE = 'http://portal.nersc.gov/project/cosmo/data/legacysurvey/'
@@ -194,3 +298,50 @@ def find_host_bricks(hostlst, bricksdr, brickstab, environfactor=1.2, brick_chec
     res['closest_host_name'] = hostnames[closest_host_idx]
 
     return res
+
+
+def show_decals_objects_in_nb(cat, nrows=3, dr=3, subsample=None, info_cols=[]):
+    """
+    Produces a table showing DECaLS cutouts
+
+    ``subsample`` can be a number to randomly subsample to that many
+    """
+    from IPython import display
+
+    if subsample:
+        cat = cat[np.random.permutation(len(cat))[:subsample]]
+
+    de_cutout_url = 'http://legacysurvey.org/viewer/jpeg-cutout/?ra={0.ra.deg}&dec={0.dec.deg}&layer={dr}&pixscale=0.1&bands=grz'
+
+    if dr == 3:
+        dr = 'decals-dr3'
+    elif dr == 4:
+        dr = 'mzls+bass-dr4'
+
+    rows = [[]]
+    for row in cat:
+        sc = SkyCoord(row['ra'], row['dec'], unit=u.deg)
+
+        templ = '<td style="text-align:center">{}<a href="{}"><img src="{}"></a></td>'
+        objstr = '{}'.format(row['objname'])
+        for colnm in info_cols:
+            objstr += '<br>{}={}'.format(colnm, row[colnm])
+
+        dviewurl = 'http://legacysurvey.org/viewer?ra={0.ra.deg}&dec={0.dec.deg}&zoom=16'.format(sc)
+        entry = templ.format(objstr, dviewurl, de_cutout_url.format(sc, dr=dr))
+
+        rows[-1].append(entry)
+        if len(rows[-1]) >= nrows:
+            rows[-1] = '<tr>' + ''.join(rows[-1]) + '</tr>'
+            rows.append([])
+    if not isinstance(rows[-1], basestring):
+        rows[-1] = '<tr>' + ''.join(rows[-1]) + '</tr>'
+
+
+    htmlstr = """
+    <table>
+    {}
+    </table>
+    """.format('\n'.join(rows))
+
+    return display.HTML(htmlstr)
