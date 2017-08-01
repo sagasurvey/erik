@@ -16,6 +16,7 @@ except ImportErrir:
 urlopen = six.moves.urllib.request.urlopen
 
 from astropy import units as u
+from astropy.coordinates import SkyCoord
 
 
 NSA_VERSION = '0.1.2'  # used to find the download location/file name
@@ -231,8 +232,6 @@ class NSAHost(object):
         """
         The host's coordinates as an ICRS `SkyCoord` object.
         """
-        from astropy.coordinates import SkyCoord
-
         return SkyCoord(self.ra*u.deg, self.dec*u.deg, frame='icrs')
 
     @property
@@ -621,6 +620,17 @@ class NSAHost(object):
             return Image(data=res.content, format='jpeg')
         except NameError:
             return res.content
+
+    def within_environs(scorcat):
+        if isinstance(scorcat, SkyCoord):
+            sc = scorcat
+        else:
+            try:
+                sc = SkyCoord.guess_from_table(scorcat)
+            except u.UnitsError:
+                sc = SkyCoord.guess_from_table(scorcat, unit=u.deg)
+
+        return sc.separation(self.coords) < self.environsarcmin * u.arcmin
 
 
 def download_with_progress_updates(u, fw, nreports=100, msg=None, outstream=sys.stdout):
