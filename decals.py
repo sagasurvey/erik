@@ -2,6 +2,7 @@ import numpy as np
 
 from astropy.coordinates import SkyCoord
 from astropy import units as u
+from astropy import table
 
 
 def band_to_idx(band):
@@ -154,3 +155,42 @@ def show_in_decals(ra, dec=None,
     if show:
         webbrowser.open(url)
     return url
+
+
+def find_host_bricks(hostlst, bricksdr, brickstab, environfactor=1.2, brick_check_func=np.any):
+    """
+    Find all the bricks around a set of hosts.  ``environfactor`` can be a
+    multiple of the environs in the host objects, or a fixed value with degree
+    units.
+    """
+    subbricks = brickstab['BRICKNAME', 'RA1', 'RA2', 'DEC1', 'DEC2']
+    subbricks.rename_column('BRICKNAME', 'brickname')
+    joined = table.join(subbricks, bricksdr)
+
+    schosts = SkyCoord([h.coords for h in hostlst])
+    hostnames = np.array([h.name for h in hostlst])
+    if hasattr(environfactor, 'unit'):
+        environrad = [environfactor.value for h in hostlst]*environfactor.unit
+    else:
+        environrad = [environfactor*h.environsarcmin for h in hostlst]*u.arcmin
+
+    # we do the ravel because match_to_catalog_sky works best with 1d
+    brickras = np.array([joined['RA1'], joined['RA1'], joined['RA2'], joined['RA2']]).ravel()
+    brickdecs = np.array([joined['DEC1'], joined['DEC2'], joined['DEC1'], joined['DEC2']]).ravel()
+    brickedge_scs = SkyCoord(brickras, brickdecs, unit=u.deg)
+
+    idx, d2d, _ = brickedge_scs.match_to_catalog_sky(schosts)
+    # reshape so that each *brick* is represented
+    bricksidx = idx.reshape(4, idx.size//4)
+    bricksd2d = d2d.reshape(4, idx.size//4)
+
+    bricksin = brick_check_func(bricksd2d < environrad[bricksidx], axis=0)
+
+    res = joined[bricksin]
+
+    # do this matching b/c it's *possible* multiple matches exist if a brick is near-equidistant
+    closest_host_idx = SkyCoord.guess_from_table(res, unit=u.deg).match_to_catalog_sky(schosts)[0]
+    res['closest_host_idx'] = closest_host_idx
+    res['closest_host_name'] = hostnames[closest_host_idx]
+
+    return res
