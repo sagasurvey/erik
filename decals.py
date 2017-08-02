@@ -104,6 +104,8 @@ def mags_catalog(cat):
         m, e = fluxivar_to_mag_magerr(cat['decam_flux'], cat['decam_flux_ivar'])
         cat['decam_mag'] = m
         cat['decam_mag_err'] = e
+        cat['mag_r'] = m[:, 2]
+        cat['mag_err_r'] = e[:, 2]
     else:
         for band in 'ugrizY':
             m, e = fluxivar_to_mag_magerr(cat['flux_'+band], cat['flux_ivar_'+band])
@@ -300,9 +302,13 @@ def find_host_bricks(hostlst, bricksdr, brickstab, environfactor=1.2, brick_chec
     return res
 
 
-def show_decals_objects_in_nb(cat, nrows=3, dr=3, subsample=None, info_cols=[]):
+def show_decals_objects_in_nb(cat, nrows=3, dr=3, subsample=None, info_cols=[], sdss_link=False):
     """
-    Produces a table showing DECaLS cutouts
+    Produces a table showing DECaLS cutouts from a decals catalog (most have
+    'ra', 'dec', and 'objname' columns).
+
+    If `dr` is 'fromcatalog' and catalog has a 'dr' the row will be used to choose which
+    DR to show.
 
     ``subsample`` can be a number to randomly subsample to that many
     """
@@ -313,10 +319,6 @@ def show_decals_objects_in_nb(cat, nrows=3, dr=3, subsample=None, info_cols=[]):
 
     de_cutout_url = 'http://legacysurvey.org/viewer/jpeg-cutout/?ra={0.ra.deg}&dec={0.dec.deg}&layer={dr}&pixscale=0.1&bands=grz'
 
-    if dr == 3:
-        dr = 'decals-dr3'
-    elif dr == 4:
-        dr = 'mzls+bass-dr4'
 
     rows = [[]]
     for row in cat:
@@ -325,10 +327,24 @@ def show_decals_objects_in_nb(cat, nrows=3, dr=3, subsample=None, info_cols=[]):
         templ = '<td style="text-align:center">{}<a href="{}"><img src="{}"></a></td>'
         objstr = '{}'.format(row['objname'])
         for colnm in info_cols:
-            objstr += '<br>{}={}'.format(colnm, row[colnm])
+            objstr += '<br>{} = {}'.format(colnm, row[colnm])
+        if sdss_link:
+            sdss_navi_url = 'http://skyserver.sdss.org/dr13/en/tools/chart/navi.aspx?ra={0.ra.deg}&dec={0.dec.deg}'.format(sc)
+            objstr += '<br><a href="{0}">SDSS DR13 Navigate</a>'.format(sdss_navi_url)
 
         dviewurl = 'http://legacysurvey.org/viewer?ra={0.ra.deg}&dec={0.dec.deg}&zoom=16'.format(sc)
-        entry = templ.format(objstr, dviewurl, de_cutout_url.format(sc, dr=dr))
+
+
+        if dr == 'fromcatalog':
+            thisdr = row['dr']
+        else:
+            thisdr = dr
+
+        if thisdr == 3:
+            thisdr = 'decals-dr3'
+        elif thisdr == 4:
+            thisdr = 'mzls+bass-dr4'
+        entry = templ.format(objstr, dviewurl, de_cutout_url.format(sc, dr=thisdr))
 
         rows[-1].append(entry)
         if len(rows[-1]) >= nrows:

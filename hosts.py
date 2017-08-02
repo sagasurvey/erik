@@ -526,6 +526,8 @@ class NSAHost(object):
             tab.add_column(colcls(name='type', data=typeint))
             tab.add_column(colcls(name='phot_sg', data=sgstr))
 
+        tab['coord'] = SkyCoord(tab['ra']*u.deg, tab['dec']*u.deg)
+
         return tab
 
 
@@ -621,7 +623,7 @@ class NSAHost(object):
         except NameError:
             return res.content
 
-    def within_environs(scorcat):
+    def within_environs(self, scorcat):
         if isinstance(scorcat, SkyCoord):
             sc = scorcat
         else:
