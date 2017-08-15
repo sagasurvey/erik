@@ -1248,6 +1248,15 @@ def get_saga_hosts_from_google(googleusername=None, googlepasswd=None,
 
     return hosts
 
+def use_base_catalogs(hostlst):
+    """
+    Update this list of hosts to use the "base catalog" version of the SDSS
+    catalogs
+    """
+    for h in hostlst:
+        h.fnsdss = 'base_sql_nsa{}.fits.gz'.format(h.nsaid)
+        h._cached_sdss = None
+
 
 #this adds the hosts from the get_saga_hosts function to the module's namespace
 _HIDE_GET_SAGA_HOSTS_WARN = True
