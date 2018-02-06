@@ -1,7 +1,12 @@
+import os
+
+import six
+
 import numpy as np
 
 from scipy import interpolate
 
+from astropy.utils.data import download_file
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 from astropy import table
@@ -99,18 +104,23 @@ def fluxivar_to_mag_magerr(flux, ivar, deunit=True):
     mag_err = 2.5/np.log(10) * flux_err/flux
     return mag*u.mag, mag_err.value*u.mag
 
-def mags_catalog(cat):
+def mags_catalog(cat, extcorr=False):
     if 'decam_flux' in cat.colnames:
         m, e = fluxivar_to_mag_magerr(cat['decam_flux'], cat['decam_flux_ivar'])
         cat['decam_mag'] = m
         cat['decam_mag_err'] = e
         cat['mag_r'] = m[:, 2]
         cat['mag_err_r'] = e[:, 2]
+        if extcorr:
+            raise NotImplementedError()
     else:
         for band in 'ugrizY':
             m, e = fluxivar_to_mag_magerr(cat['flux_'+band], cat['flux_ivar_'+band])
+            if extcorr:
+                m + 2.5 * np.log10(cat['mw_transmission_'+band])*u.mag
             cat['mag_'+band] = m
             cat['mag_err_'+band] = e
+
 
 
 DECALS_AP_SIZES = [0.5,0.75,1.0,1.5,2.0,3.5,5.0,7.0] * u.arcsec
@@ -230,6 +240,24 @@ def brickname_to_catalog_url(brickname, drnum, baseurl=_NERSC_BASE):
 
     return catalogurl + '/' + dirnm + '/tractor-' + brickname + '.fits'
 
+def download_bricks(bricktab, drnum, baseurl=_NERSC_BASE, update_tab=True):
+    dled = []
+    local_fns = []
+    for row in bricktab:
+        url = brickname_to_catalog_url(row['brickname'], 5)
+        local_fn = os.path.join('decals_dr5', 'catalogs', 'tractor-{}.fits'.format(row['brickname']))
+        if os.path.isfile(local_fn):
+            print(local_fn, 'already exists, skipping...')
+        else:
+            dlfn = download_file(url)
+            os.rename(dlfn, local_fn)
+            dled.append(local_fn)
+        local_fns.append(local_fn)
+    if update_tab:
+        bricktab['local_fn'] = local_fns
+    return dled
+
+
 
 def show_in_decals(ra, dec=None,
                    urltempl='http://legacysurvey.org/viewer?ra={}&dec={}',
@@ -265,20 +293,58 @@ def show_in_decals(ra, dec=None,
 
 def find_host_bricks(hostlst, bricksdr, brickstab, environfactor=1.2, brick_check_func=np.any):
     """
-    Find all the bricks around a set of hosts.  ``environfactor`` can be a
-    multiple of the environs in the host objects, or a fixed value with degree
-    units.
+    Find all the bricks around a set of hosts.
+
+    Parameters
+    ----------
+    hostlst
+        A list of host objects or a table with host info
+    bricksdr
+        The table from the "survey-bricks.fits.gz" DECaLS file
+    brickstab
+        The table from the "survey-bricks-dr#.fits.gz" DECaLS file
+    environfactor
+        The area to check.  If a raw number, will use that multiple of the
+        environs, assuming `hostlst` is a Host object.  Otherwise, must be
+        a quantity either distance or angular
+    brick_check_func
+        the function that maps a list of brick corner booleans to a single
+        boolean
+
+    Returns
+    -------
+    joinedtab
+        A joined table with the contents of bricksdr and brickstab, with only
+        bricks in the `environfactor` area
     """
+
     subbricks = brickstab['BRICKNAME', 'RA1', 'RA2', 'DEC1', 'DEC2']
     subbricks.rename_column('BRICKNAME', 'brickname')
     joined = table.join(subbricks, bricksdr)
 
-    schosts = SkyCoord([h.coords for h in hostlst])
-    hostnames = np.array([h.name for h in hostlst])
-    if hasattr(environfactor, 'unit'):
-        environrad = [environfactor.value for h in hostlst]*environfactor.unit
+
+    if isinstance(hostlst, table.Table):
+        schosts = hostlst['coord']
+        hostnames = np.choose(hostlst['SAGA_name']=='', [hostlst['SAGA_name'],
+                              hostlst['NSAID']]).astype('U')
+        if hasattr(environfactor, 'unit'):
+            if environfactor.unit.is_equivalent(u.kpc):
+                environfactor = environfactor/(hostlst['distance']*u.Mpc)
+                environrad = environfactor.to(u.arcmin, u.dimensionless_angles())
+            elif environfactor.unit.is_equivalent(u.deg):
+                environrad = environfactor.to(u.arcmin)
+            else:
+                raise u.UnitsError('environfactor not a distance or angle')
+        else:
+            raise TypeError('environfactor must be a Quantity with table hosts')
+
     else:
-        environrad = [environfactor*h.environsarcmin for h in hostlst]*u.arcmin
+        schosts = SkyCoord([h.coords for h in hostlst])
+        hostnames = np.array([h.name for h in hostlst])
+        if hasattr(environfactor, 'unit'):
+            environrad = [environfactor.value for h in hostlst]*environfactor.unit
+        else:
+            environrad = [environfactor*h.environsarcmin for h in hostlst]*u.arcmin
 
     # we do the ravel because match_to_catalog_sky works best with 1d
     brickras = np.array([joined['RA1'], joined['RA1'], joined['RA2'], joined['RA2']]).ravel()
@@ -302,7 +368,7 @@ def find_host_bricks(hostlst, bricksdr, brickstab, environfactor=1.2, brick_chec
     return res
 
 
-def show_decals_objects_in_nb(cat, nrows=3, dr=3, subsample=None, info_cols=[], sdss_link=False):
+def show_decals_objects_in_nb(cat, nrows=3, dr=3, subsample=None, info_cols=[], sdss_link=False, show_reticle=True):
     """
     Produces a table showing DECaLS cutouts from a decals catalog (most have
     'ra', 'dec', and 'objname' columns).
@@ -320,12 +386,17 @@ def show_decals_objects_in_nb(cat, nrows=3, dr=3, subsample=None, info_cols=[], 
     de_cutout_url = 'http://legacysurvey.org/viewer/jpeg-cutout/?ra={0.ra.deg}&dec={0.dec.deg}&layer={dr}&pixscale=0.1&bands=grz'
 
 
+    entry_info = []
     rows = [[]]
     for row in cat:
-        sc = SkyCoord(row['ra'], row['dec'], unit=u.deg)
+        if 'RA' in row.colnames:
+            sc = SkyCoord(row['RA'], row['DEC'], unit=u.deg)
+        else:
+            sc = SkyCoord(row['ra'], row['dec'], unit=u.deg)
 
-        templ = '<td style="text-align:center">{}<a href="{}"><img src="{}"></a></td>'
-        objstr = '{}'.format(row['objname'])
+        templ = '<td style="text-align:center">{}<a href="{}"><canvas id="cnv{}" width="256" height="256" imgsrc="{}"></a></td>'
+        objnm = '{}'.format(row['objname' if 'objname' in row.colnames else 'name'])
+        objstr = objnm
         for colnm in info_cols:
             objstr += '<br>{} = {}'.format(colnm, row[colnm])
         if sdss_link:
@@ -340,24 +411,56 @@ def show_decals_objects_in_nb(cat, nrows=3, dr=3, subsample=None, info_cols=[], 
         else:
             thisdr = dr
 
-        if thisdr == 3:
-            thisdr = 'decals-dr3'
-        elif thisdr == 4:
+        if thisdr == 4:
             thisdr = 'mzls+bass-dr4'
-        entry = templ.format(objstr, dviewurl, de_cutout_url.format(sc, dr=thisdr))
+        elif thisdr > 2:
+            thisdr = 'decals-dr' + str(thisdr)
+
+        imgurl = de_cutout_url.format(sc, dr=thisdr)
+        entry = templ.format(objstr, dviewurl, objnm, imgurl)
+        entry_info.append((objnm, imgurl))
 
         rows[-1].append(entry)
         if len(rows[-1]) >= nrows:
             rows[-1] = '<tr>' + ''.join(rows[-1]) + '</tr>'
             rows.append([])
-    if not isinstance(rows[-1], basestring):
+    if not isinstance(rows[-1], six.string_types):
         rows[-1] = '<tr>' + ''.join(rows[-1]) + '</tr>'
 
 
+    script = """
+    function draw(nm, imgurl){
+      var img = new Image(256, 256);
+      img.src = imgurl;
+      img.onload = function(){
+        var cnvs = document.getElementById("cnv"+nm);
+        cnvs.style.z_index = 2;
+
+        var ctx = cnvs.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        ctx.beginPath();
+        ctx.arc(128, 128, 15, 0, 2 * Math.PI, false);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#ddaa00';
+        ctx.stroke();
+      }
+
+
+    }
+
+    """
+    if not show_reticle:
+        script = script.replace('ctx.stroke();', '')
+    for nm, url in entry_info:
+        script += 'draw("{}","{}");\n'.format(nm, url)
     htmlstr = """
     <table>
     {}
     </table>
-    """.format('\n'.join(rows))
+
+    <script type="text/javascript">
+    {}
+    </script>
+    """.format('\n'.join(rows), script)
 
     return display.HTML(htmlstr)
