@@ -16,6 +16,8 @@ def write_bino_input(catalog, fn, overwrite=False):
     Writes out a binospec input file. See
     http://mingus.mmto.arizona.edu/~bjw/mmt/binomask_info.html for more details.
 
+    Note that if "mmtbino_type" is in the catalog, it will be used as "type".
+
     Parameters
     ----------
     catalog: astropy Table or list of Tables
@@ -38,6 +40,11 @@ def write_bino_input(catalog, fn, overwrite=False):
         # actually parse it
         valid_col_names = 'name,magnitude,priority,pm-ra,pm-dec,epoch,type'.split(',')
 
+        catalog_colnames = list(catalog.colnames)
+        if 'mmtbino_type' in catalog_colnames:
+            catalog_colnames.remove('mmtbino_type')
+            catalog_colnames.insert(0, 'mmtbino_type')
+
         ras = catalog['coord'].ra.deg
         decs = catalog['coord'].dec.deg
 
@@ -45,13 +52,13 @@ def write_bino_input(catalog, fn, overwrite=False):
         names_to_write = []
         for write_name in valid_col_names:
             found = False
-            for colnm in catalog.colnames:
-                if colnm.lower() == write_name:
+            for colnm in catalog_colnames:
+                if colnm.lower() == write_name or (colnm == 'mmtbino_type' and write_name == 'type'):
                     if found:
                         warn(f'Found column name {colnm}, which is a duplicate for '
-                              '{write_name}.  Only taking first matching column')
+                             f'{write_name}.  Only taking first matching column ("{found}")')
                     else:
-                        found = True
+                        found = colnm
                         if write_name == 'type':
                             col = [_bino_typemap[s] for s in catalog[colnm]]
                         else:
