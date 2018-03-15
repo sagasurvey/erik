@@ -22,12 +22,26 @@ def subselect_aperture(apmags, band, apsize=1*u.arcsec):
     else:
         return apmags[:, band_to_idx(band), DECALS_AP_SIZES == apsize][:, 0]
 
-def make_cutout_comparison_table(dcat, dhtml=True, doprint=True, inclres=False, inclmod=False, inclsdss=True, add_annotation=[]):
+def make_cutout_comparison_table(dcat, dhtml=True, doprint=True, inclres=False,
+                                 inclmod=False, inclsdss=True,
+                                 add_annotation=[], subsample=None):
     """
     Produces a table comparing DECaLS and SDSS objects side-by-side
 
     `dcat` should be a *DECaLS* catalog, not SDSS
     """
+    if subsample:
+        dcat = dcat[np.random.permutation(len(dcat))[:subsample]]
+    else:
+        dcat = dact.copy()
+
+    for fromnm, tonm in [('RA', 'ra'), ('DEC', 'dec'), ('OBJID', 'objid')]:
+        if tonm not in dcat.colnames and fromnm in dcat.colnames:
+            dcat[tonm] = dcat[fromnm]
+    if 'brickid' not in dcat.colnames:
+        dcat['brickid'] = ['notDE']*len(dcat)
+        dcat['brickname'] = ['notDE']*len(dcat)
+
     de_cutout_url = 'http://legacysurvey.org/viewer/jpeg-cutout/?ra={0.ra.deg}&dec={0.dec.deg}&layer=decals-dr3&pixscale=0.1&bands=grz'
     demod_cutout_url = 'http://legacysurvey.org/viewer/jpeg-cutout/?ra={0.ra.deg}&dec={0.dec.deg}&layer=decals-dr3-model&pixscale=0.1&bands=grz'
     deres_cutout_url = 'http://legacysurvey.org/viewer/jpeg-cutout/?ra={0.ra.deg}&dec={0.dec.deg}&layer=decals-dr3-resid&pixscale=0.1&bands=grz'
@@ -368,9 +382,10 @@ def find_host_bricks(hostlst, bricksdr, brickstab, environfactor=1.2, brick_chec
     return res
 
 
-def show_decals_objects_in_nb(cat, nrows=3, dr=3, subsample=None, info_cols=[], sdss_link=False, show_reticle=True):
+def show_decals_objects_in_nb(cat, nrows=3, dr=3, subsample=None, info_cols=[],
+                              sdss_link=False, show_reticle=True):
     """
-    Produces a table showing DECaLS cutouts from a decals catalog (most have
+    Produces a table showing DECaLS cutouts from a decals catalog (must have
     'ra', 'dec', and 'objname' columns).
 
     If `dr` is 'fromcatalog' and catalog has a 'dr' the row will be used to choose which
@@ -384,7 +399,7 @@ def show_decals_objects_in_nb(cat, nrows=3, dr=3, subsample=None, info_cols=[], 
         cat = cat[np.random.permutation(len(cat))[:subsample]]
 
     de_cutout_url = 'http://legacysurvey.org/viewer/jpeg-cutout/?ra={0.ra.deg}&dec={0.dec.deg}&layer={dr}&pixscale=0.1&bands=grz'
-
+    sdss_cutout_url = 'http://skyserver.sdss.org/dr{dr}/SkyserverWS/ImgCutout/getjpeg?ra={0.ra.deg}&dec={0.dec.deg}&width=256&height=256&scale=0.15'
 
     entry_info = []
     rows = [[]]
@@ -394,30 +409,43 @@ def show_decals_objects_in_nb(cat, nrows=3, dr=3, subsample=None, info_cols=[], 
         else:
             sc = SkyCoord(row['ra'], row['dec'], unit=u.deg)
 
-        templ = '<td style="text-align:center">{}<a href="{}"><canvas id="cnv{}" width="256" height="256" imgsrc="{}"></a></td>'
+        templ = ('<td style="text-align:center">{objstr}<a href="{dviewurl}"><{tagtype} '
+                 'id="cnv{objnm}" width="256" height="256" src="{imgurl}"></a></td>')
         objnm = '{}'.format(row['objname' if 'objname' in row.colnames else 'name'])
         objstr = objnm
+
+        needbr = True
         for colnm in info_cols:
             objstr += '<br>{} = {}'.format(colnm, row[colnm])
+            needbr = False
+        if needbr:
+            objstr += '<br>'
+
         if sdss_link:
             sdss_navi_url = 'http://skyserver.sdss.org/dr13/en/tools/chart/navi.aspx?ra={0.ra.deg}&dec={0.dec.deg}'.format(sc)
             objstr += '<br><a href="{0}">SDSS DR13 Navigate</a>'.format(sdss_navi_url)
 
         dviewurl = 'http://legacysurvey.org/viewer?ra={0.ra.deg}&dec={0.dec.deg}&zoom=16'.format(sc)
 
-
         if dr == 'fromcatalog':
             thisdr = row['dr']
         else:
             thisdr = dr
 
-        if thisdr == 4:
-            thisdr = 'mzls+bass-dr4'
-        elif thisdr > 2:
-            thisdr = 'decals-dr' + str(thisdr)
-
-        imgurl = de_cutout_url.format(sc, dr=thisdr)
-        entry = templ.format(objstr, dviewurl, objnm, imgurl)
+        use_sdss = False
+        if hasattr(thisdr, 'startswith') and thisdr.startswith('sdss'):
+            use_sdss = True
+        else:
+            if thisdr == 4:
+                thisdr = 'mzls+bass-dr4'
+            elif thisdr > 2:
+                thisdr = 'decals-dr' + str(thisdr)
+        if use_sdss:
+            imgurl = sdss_cutout_url.format(sc, dr=thisdr[4:])
+        else:
+            imgurl = de_cutout_url.format(sc, dr=thisdr)
+        tagtype = 'canvas' if show_reticle else 'img'
+        entry = templ.format(**locals())
         entry_info.append((objnm, imgurl))
 
         rows[-1].append(entry)
@@ -428,31 +456,33 @@ def show_decals_objects_in_nb(cat, nrows=3, dr=3, subsample=None, info_cols=[], 
         rows[-1] = '<tr>' + ''.join(rows[-1]) + '</tr>'
 
 
-    script = """
-    function draw(nm, imgurl){
-      var img = new Image(256, 256);
-      img.src = imgurl;
-      img.onload = function(){
-        var cnvs = document.getElementById("cnv"+nm);
-        cnvs.style.z_index = 2;
+    script = ''
+    if show_reticle:
+        script = """
+        function draw(nm, imgurl){
+          var img = new Image(256, 256);
+          img.src = imgurl;
+          img.onload = function(){
+            var cnvs = document.getElementById("cnv"+nm);
+            cnvs.style.z_index = 2;
+            console.log("aha" + nm);
 
-        var ctx = cnvs.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-        ctx.beginPath();
-        ctx.arc(128, 128, 15, 0, 2 * Math.PI, false);
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = '#ddaa00';
-        ctx.stroke();
-      }
+            var ctx = cnvs.getContext("2d");
+            ctx.drawImage(img, 0, 0);
+            ctx.beginPath();
+            ctx.arc(128, 128, 15, 0, 2 * Math.PI, false);
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#ddaa00';
+            ctx.stroke();
+          }
 
 
-    }
+        }
 
-    """
-    if not show_reticle:
-        script = script.replace('ctx.stroke();', '')
-    for nm, url in entry_info:
-        script += 'draw("{}","{}");\n'.format(nm, url)
+        """
+        for nm, url in entry_info:
+            script += 'draw("{}","{}");\n'.format(nm, url)
+
     htmlstr = """
     <table>
     {}
