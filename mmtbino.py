@@ -21,9 +21,9 @@ def write_bino_input(catalog, fn, overwrite=False):
     Parameters
     ----------
     catalog: astropy Table or list of Tables
-        Must have 'coord at a minimum (a SkyCoord). Recommended:
-        name,ra,dec,magnitude,priority,type. 'priority' is 1 highest. 'type'
-        must be “target”, “sky” or “standard”.
+        Must have 'coord' at a minimum (a SkyCoord). Recommended:
+        'name','magnitude','priority','type'. 'priority' is 1 highest. 'type'
+        column entries must be either “target”, “sky” or “standard”.
 
     Returns
     -------
