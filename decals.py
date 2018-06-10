@@ -336,11 +336,14 @@ def find_host_bricks(hostlst, bricksdr, brickstab, environfactor=1.2, brick_chec
     subbricks.rename_column('BRICKNAME', 'brickname')
     joined = table.join(subbricks, bricksdr)
 
-
     if isinstance(hostlst, table.Table):
         schosts = hostlst['coord']
+
         hostnames = np.choose(hostlst['SAGA_name']=='', [hostlst['SAGA_name'],
-                              hostlst['NSAID']]).astype('U')
+                              np.char.add('NSA', hostlst['NSAID'].astype('U'))])
+        pgcs = hostnames == 'NSA-1'
+        hostnames[pgcs] = np.char.add('PGC', hostlst['PGC#'].astype('U'))[pgcs]
+
         if hasattr(environfactor, 'unit'):
             if environfactor.unit.is_equivalent(u.kpc):
                 environfactor = environfactor/(hostlst['distance']*u.Mpc)
