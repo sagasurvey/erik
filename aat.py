@@ -10,7 +10,7 @@ import numpy as np
 
 try:
     import six
-except ImportErrir:
+except ImportError:
     from astropy.extern import six
 
 from astropy import units as u
@@ -310,7 +310,7 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
             for l in fr:
                 if inhdr:
                     if l.startswith('LABEL'):
-                        fw.write(l.replace('base catalog', fieldname))
+                        fw.write(l.replace('base catalog', fieldname).replace('master catalog', fieldname))
                     elif l.startswith('UTDATE'):
                         if utcobsdate is None:
                             fw.write(l)
