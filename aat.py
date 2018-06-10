@@ -329,7 +329,8 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
                     lst = l.strip()
                     if lst == '' or lst.startswith('#'):
                         fw.write(l)
-                    elif l.startswith('Guide'):
+                    #elif l.startswith('Guide'):
+                    elif 'guide' in l.lower():
                         if nguides == 'all' or (guidesdone < nguides):
                             if guidemags != 'all':
                                 mag = float(l.split()[9])
@@ -337,11 +338,13 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
                                     continue  # outside of the valid mag range
                             fw.write(l)
                             guidesdone += 1
-                    elif l.startswith('Flux'):
+                    #elif l.startswith('Flux'):
+                    elif 'flux' in l.lower():
                         if nflux == 'all' or (fluxdone < nflux):
                             fw.write(l)
                             fluxdone += 1
-                    elif l.startswith('Sky'):
+                    #elif l.startswith('Sky'):
+                    elif 'sky' in l.lower():
                         if nsky == 'all' or (skydone < nsky):
                             fw.write(l)
                             skydone += 1
