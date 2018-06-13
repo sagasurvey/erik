@@ -371,6 +371,7 @@ def subsample_from_master_fld(masterfn, outfn, nperpri, nguides='all',
     pritotalperc = {pri: None if priall[pri]==0 else 100.*pritotal[pri]/priall[pri] for pri in pritotal}
     msg = 'Total remaining in each priority ({0} fluxes, {1} guides, and {2} skies not included):\n{3}\n{4}%'
     print(msg.format(fluxdone, guidesdone, skydone, pritotal, pritotalperc))
+    return pritotal
 
 
 def imagelist_fld_targets(fldlinesorfn, ttype='all', **kwargs):
@@ -661,7 +662,8 @@ def load_lis_file(fn):
                 info.append(l.strip())
 
     names = 'fibnums,ids,ras,decs,codes,pris,mags,comments'.split(',')
-    tab = table.Table(names=names, data=[locals()[nm] for nm in names])
+    lcs = locals()
+    tab = table.Table(names=names, data=[lcs[nm] for nm in names])
 
     sc = SkyCoord(ras, decs, unit=(u.hourangle, u.degree))
 

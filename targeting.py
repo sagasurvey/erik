@@ -10,14 +10,14 @@ from matplotlib import pyplot as plt
 
 try:
     import six
-except ImportErrir:
+except ImportError:
     from astropy.extern import six
 urlopen = six.moves.urllib.request.urlopen
 
 from astropy import units as u
 
 
-SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss.org/dr12/en/tools/chart/list.aspx'
+SDSS_IMAGE_LIST_URL = 'http://skyserver.sdss.org/dr14/en/tools/chart/list.aspx'
 
 # the color cuts specified in the BOSSANOVA proposal
 bossanova_color_cuts = {'g-r': (None, 1.3), 'r-i': (None, 0.7)}
@@ -550,8 +550,8 @@ def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
     if url:
         if posttoimglist:
             page = _imglist_post_templ.format(url=url,text=text)
-            tf = tempfile.NamedTemporaryFile(delete=False)
-            tf.write(page)
+            tf = tempfile.NamedTemporaryFile(delete=False, suffix='.html')
+            tf.write(page.encode())
             tf.flush()
             fiurl = 'file://' + os.path.abspath(tf.name)
             webbrowser.open(fiurl)
@@ -561,8 +561,9 @@ def sampled_imagelist(ras, decs, n=25, names=None, url=SDSS_IMAGE_LIST_URL,
             webbrowser.open(url)
 
     return text
-_imglist_post_templ = """
-<html>
+_imglist_post_templ = """<!doctype html>
+
+<html lang="en">
 <head>
 <title>SDSS sampled_imagelist form</title>
 </head>
