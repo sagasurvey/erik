@@ -170,13 +170,13 @@ def reduce_field(fieldname, idx_template, basepath, redflat_expnum,
         print('ccd1 results already done:', bluecombinedfn)
         p1_passed = True
     else:
-        print('ccd1 reducing as: "{}" in {}. Log file:{}'.format(cmdline1, ccd1, log1f))
+        print('ccd1 reducing as: "{}" in {}. Log file:{}'.format(cmdline1, ccd1, log1fn))
     redcombinedfn = os.path.join(ccd2, raw_base2 + '_combined.fits')
     if os.path.exists(redcombinedfn):
         print('ccd2 results already done:', redcombinedfn)
         p2_passed = True
     else:
-        print('ccd2 reducing as: "{}" in {}. Log file:{}'.format(cmdline2, ccd2, log2f))
+        print('ccd2 reducing as: "{}" in {}. Log file:{}'.format(cmdline2, ccd2, log2fn))
 
     with open(log1fn, 'r' if p1_passed else 'w') as log1f:
         with open(log2fn, 'r' if p2_passed else 'w') as log2f:
