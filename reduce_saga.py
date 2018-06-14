@@ -1,15 +1,23 @@
 """
 This script uses 2dfdr to reduce 2dF/AAOMega data as part of the SAGA Survey. It
 assumes:
-
 * That the raw data from any given night is all in a directory that also contains
   "ccd_1" and "ccd_2" directories.
 * That any given set of exposures contains a red-appropriate flat, a
-  blue-appropriate flat, an arc, and some number of science exposures. (The
-  default is to assume that order, although that's customizable)
+  blue-appropriate flat, an arc, and some number of science exposures.
 * That the 2dfdr binaries are somewhere on your current path.
 
-Usage is e.g.:
+Additional *default* assumptions that can be relaxed via appropriate
+command-line arguments are:
+* the first 10 exposures are biases
+* the order of each exposure set is "redflat, blueflat, arc, science x n"
+* there are 4 science exposures
+* the current working directory is the one with the data and that should get
+  all the reduce files
+* idx files are "$HOME/observing/aat/ozdes_blue_mod.idx" and
+  "$HOME/observing/aat/ozdes_red_mod.idx"
+
+So then basic usage is e.g.:
 python ../reduce_saga.py pgc64427_2 25
 
 Run from the "180614" which contains the raw data for that night
@@ -25,10 +33,13 @@ import subprocess
 
 CCDNUM_TO_NAME = {1: 'blue', 2: 'red'}
 POLL_PERIOD = 1
+REDUCE_TEMPL = 'aaorun reduce_run {0} -idxfile {1}'
 
-def check_make_biases(basepath):
-    bias1 = os.path.join(basepath, 'bias/ccd1')
-    bias2 = os.path.join(basepath, 'bias/ccd2')
+def check_make_biases(basepath, idx_template, raw_bases, biasexpnums):
+    biasbase = os.path.join(basepath, 'bias')
+    bias1 = os.path.join(biasbase, 'ccd1')
+    bias2 = os.path.join(biasbase, 'ccd2')
+    biasi = (bias1, bias2)
 
     if not (os.path.isdir(bias1) and os.path.isdir(bias2)):
         os.makedirs(bias1)
@@ -45,9 +56,29 @@ def check_make_biases(basepath):
         biases_present = False
 
     if not biases_present:
-        raise NotImplementedError('cannot make biases yet... the directories '
-            'are made ({} & {}) but you will have to link the files and combine'
-            ' them by hand'.format(bias1, bias2))
+        print('No combined biases present.  Need to build them.')
+
+        for i, biasdir in enumerate((bias1, bias2)):
+            ccdnum = i + 1
+            rawdir = 'ccd_{}'.format(ccdnum)
+
+            #need to link biases
+            for expnum in biasexpnums:
+                fn = raw_bases[i] + '{:04}.fits'.format(expnum)
+                check_or_make_symlink(os.path.relpath(os.path.join(rawdir, fn), biasi[i]),
+                                      os.path.join(biasi[i], fn))
+
+
+            idxfile = idx_template.format(CCDNUM_TO_NAME[ccdnum])
+            bias_cmdline = REDUCE_TEMPL.format(raw_bases[i], idxfile)
+            biaslogfn = os.path.join(biasbase, 'bias{}.log'.format(ccdnum))
+            print('Making bias in', biasdir, 'as',bias_cmdline,  'with log file:', biaslogfn)
+            with open(biaslogfn, 'w') as biaslogf:
+                ps = subprocess.Popen(bias_cmdline, shell=True, cwd=biasdir,
+                                      stdout=biaslogf, stderr=subprocess.STDOUT)
+                retcode = ps.wait()
+                if retcode != 0:
+                    raise ValueError('Bias {} failed'.format(biasdir))
 
     return biasfn1, biasfn2
 
@@ -84,7 +115,7 @@ def determine_rawfns(rawdir, ccdnum):
 
 
 def reduce_field(fieldname, idx_template, basepath, redflat_expnum,
-                 blueflat_expnum, arc_expnum, sci_expnums):
+                 blueflat_expnum, arc_expnum, sci_expnums, bias_expnums):
     raw1 = os.path.join(basepath, 'ccd_1')
     raw2 = os.path.join(basepath, 'ccd_2')
     if not (os.path.exists(raw1) and os.path.exists(raw2)):
@@ -92,7 +123,9 @@ def reduce_field(fieldname, idx_template, basepath, redflat_expnum,
     raw_base1 = determine_rawfns(raw1, 1)
     raw_base2 = determine_rawfns(raw2, 2)
 
-    biasfn1, biasfn2 = check_make_biases(basepath)
+    biasfn1, biasfn2 = check_make_biases(basepath, idx_template,
+                                         (raw_base1, raw_base2),
+                                         bias_expnums)
 
     fieldpath = os.path.join(basepath, fieldname)
     ccd1 = os.path.join(fieldpath, 'ccd1')
@@ -126,25 +159,24 @@ def reduce_field(fieldname, idx_template, basepath, redflat_expnum,
     check_or_make_symlink(os.path.relpath(biasfn1, ccd1), os.path.join(ccd1, 'BIAScombined.fits'))
     check_or_make_symlink(os.path.relpath(biasfn2, ccd2), os.path.join(ccd2, 'BIAScombined.fits'))
 
-    cmdline_templ = 'aaorun reduce_run {0} -idxfile {1}'
-    cmdline1 = cmdline_templ.format(raw_base1, idx_template.format(CCDNUM_TO_NAME[1]))
-    print('ccd1 reducing as: "{}" in {}'.format(cmdline1, ccd1))
-    cmdline2 = cmdline_templ.format(raw_base2, idx_template.format(CCDNUM_TO_NAME[2]))
-    print('ccd2 reducing as: "{}" in {}'.format(cmdline2, ccd2))
-
+    cmdline1 = REDUCE_TEMPL.format(raw_base1, idx_template.format(CCDNUM_TO_NAME[1]))
+    cmdline2 = REDUCE_TEMPL.format(raw_base2, idx_template.format(CCDNUM_TO_NAME[2]))
     log1fn = os.path.join(fieldpath, 'ccd1.log')
     log2fn = os.path.join(fieldpath, 'ccd2.log')
-    print('Spawning two aaoruns. Logs will be in {} and {}.'.format(log1fn, log2fn))
 
     p1_passed = p2_passed = None
     bluecombinedfn = os.path.join(ccd1, raw_base1 + '_combined.fits')
     if os.path.exists(bluecombinedfn):
         print('ccd1 results already done:', bluecombinedfn)
         p1_passed = True
+    else:
+        print('ccd1 reducing as: "{}" in {}. Log file:{}'.format(cmdline1, ccd1, log1f))
     redcombinedfn = os.path.join(ccd2, raw_base2 + '_combined.fits')
     if os.path.exists(redcombinedfn):
         print('ccd2 results already done:', redcombinedfn)
         p2_passed = True
+    else:
+        print('ccd2 reducing as: "{}" in {}. Log file:{}'.format(cmdline2, ccd2, log2f))
 
     with open(log1fn, 'r' if p1_passed else 'w') as log1f:
         with open(log2fn, 'r' if p2_passed else 'w') as log2f:
@@ -159,7 +191,7 @@ def reduce_field(fieldname, idx_template, basepath, redflat_expnum,
             else:
                 p2 = None
 
-            while not p1_passed and not p2_passed:
+            while p1_passed is None or p2_passed is None:
                 time.sleep(POLL_PERIOD)
                 if not p1_passed and p1.poll() is not None:
                     if p1.returncode == 0:
@@ -180,15 +212,16 @@ def reduce_field(fieldname, idx_template, basepath, redflat_expnum,
         splicelogfn = os.path.join(fieldpath, 'splice.log')
         splice_outfn = os.path.join(basepath, fieldname+'_spliced.fits')
 
-        print('Splicing together the results.  Log file:', splicelogfn)
-
         splice_cmdline_templ = 'aaorun splice "{blue} {red}" -idxfile {idx} -output_file {out}'
         splice_cmdline = splice_cmdline_templ.format(blue=bluecombinedfn,
                                                      red=redcombinedfn,
                                                      idx=idx_template.format(CCDNUM_TO_NAME[1]),
                                                      out=splice_outfn)
+
+        print('Splicing together the results using ', splice_cmdline,'.  Log file:', splicelogfn)
+
         with open(splicelogfn, 'w') as splicef:
-            ps = subprocess.Popen(cmdline1, shell=True, cwd=fieldpath,
+            ps = subprocess.Popen(splice_cmdline, shell=True, cwd=basepath,
                                   stdout=splicef, stderr=subprocess.STDOUT)
             retcode = ps.wait()
             if retcode == 0:
@@ -209,6 +242,8 @@ if __name__ == '__main__':
     parser.add_argument('-b', '--blueflat-index', default=1)
     parser.add_argument('-a', '--arc-index', default=2)
     parser.add_argument('-o', '--sci-offset', default=3)
+    parser.add_argument('--bias-start', default=1)
+    parser.add_argument('--n-bias', default=10)
     parser.add_argument('--basepath', default = '.')
     parser.add_argument('--idx-template', default=os.path.join(os.environ['HOME'], 'observing/aat/ozdes_{}_mod.idx'))
 
@@ -220,6 +255,7 @@ if __name__ == '__main__':
     arcexp = enum1 + int(args.arc_index)
     sciexp_start = enum1 + int(args.sci_offset)
     sciexps = [i+sciexp_start for i in range(args.n_science)]
+    biasexps = [i+args.bias_start for i in range(args.n_bias)]
 
     reduce_field(args.fieldname, args.idx_template, args.basepath, redexp,
-                 blueexp, arcexp, sciexps)
+                 blueexp, arcexp, sciexps, biasexps)
