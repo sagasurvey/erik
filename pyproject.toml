@@ -18,7 +18,10 @@ scikit-learn = ">=0.20"
 pyperclip = ">=1.7"
 ipython = ">=8.14.0"
 jupyterlab = ">=4.0.2"
+astroquery = ">=4.7"
 saga = {path = "../saga", develop = true}
+tqdm
+ipywidgets
 
 
 [build-system]
