@@ -23,6 +23,7 @@ tqdm = ">=4.66.1"
 ipywidgets = ">=8.1.2"
 astroquery = {version = ">=0.4.7.dev9069", allow-prereleases = true}
 multiprocess = "^0.70.16"
+cryptography = ">=42.0.4"
 
 
 [build-system]
